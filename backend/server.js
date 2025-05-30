@@ -361,18 +361,52 @@ async function customizeWithOpenAI(resumeText, jobDescription, apiKey, type) {
 
 async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
     const prompts = {
-        resume: `Customize this resume for the job. Focus on relevant skills and keywords. IMPORTANT: Keep ALL work experience, achievements, and dates. Do not remove or summarize any job experiences - preserve all bullet points and accomplishments. Only optimize wording and emphasize relevant skills.
+        resume: `
+**Your Task:** Analyze the provided resume and the target job description. Transform the resume into a highly ATS-friendly document that strategically highlights the candidate's qualifications and experiences most relevant to the specific job requirements, strictly adhering to the output format specified below.
 
-For companies that are not widely known (like startups or smaller companies), include a brief 1-2 line company description. Skip descriptions for well-known companies like Amazon, Google, Microsoft, Meta, etc.
+**Phase 1: Analysis (Internal Thought Process - Do not output this analysis)**
 
-FORMAT REQUIREMENTS - Use these exact prefixes for easy parsing:
-- Company lines: "COMPANY: [Company Name] [Location] • [Dates]"  
-- Job titles: "TITLE: [Job Title]"
-- Company descriptions: "DESC: [Description]"
-- All work achievements: Start with "• [Achievement]"
-- Section headers: Use ALL CAPS (WORK EXPERIENCE, EDUCATION, etc.)
+1.  **Deeply Analyze the Job Description:**
+    * Identify core responsibilities, required hard and soft skills, essential qualifications, and specific technologies, methodologies, or keywords.
+    * Note the company's industry and any explicit needs or pain points mentioned.
+    * Extract any mentions of desired quantifiable achievements or specific outcomes.
 
-Resume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
+2.  **Thoroughly Review the Candidate's Resume:**
+    * Map existing skills, experiences, and accomplishments to the job description's requirements.
+    * Identify quantifiable achievements and their impact.
+    * Note areas where wording can be optimized to better reflect the job's language.
+
+**Phase 2: Resume Customization and Output Generation**
+
+**IMPORTANT Constraints & Guidelines:**
+* **Preserve All Content:** Keep ALL original work experiences, achievements, and dates. Do NOT remove or summarize any job experiences. Preserve all bullet points and their core accomplishments. Your role is to optimize wording and emphasize relevance, not to shorten or omit.
+* **Keyword Integration:** Naturally integrate keywords and key phrases from the job description into the existing resume content (summaries, experience descriptions, skills). Avoid keyword stuffing; ensure a natural flow.
+* **Company Descriptions:** For companies that are not globally recognized brands (e.g., startups, smaller companies), include a brief 1-2 line company description using the "DESC:" prefix. Skip descriptions for well-known FANG/MANGA-like companies or equivalents (e.g., Amazon, Google, Microsoft, Meta, Apple, Netflix, etc.) unless the original resume already provides a description for them, in which case, retain it.
+* **ATS-Friendly Wording:** Use action verbs and professional language that aligns with the job description.
+
+**STRICT OUTPUT FORMAT REQUIREMENTS - Use these exact prefixes and structures:**
+
+* **SECTION HEADERS:** Use ALL CAPS (e.g., WORK EXPERIENCE, EDUCATION, SKILLS, SUMMARY).
+* **SUMMARY SECTION (if applicable):** If the original resume has a summary, or if you generate one, ensure it's 2-4 sentences, directly addressing the job's core requirements.
+* **WORK EXPERIENCE:**
+    * **Company Line:** "COMPANY: [Company Name] [Location] • [Dates of Employment]"
+    * **Job Title:** "TITLE: [Job Title]"
+    * **Company Description (if applicable, see guidelines above):** "DESC: [Brief company description]"
+    * **Achievements/Responsibilities:** Each bullet point MUST start with "• " (a bullet point character followed by a space). Retain all original bullet points, optimizing their wording for relevance and impact using keywords from the job description. Quantify achievements where possible using the existing data or by rephrasing.
+
+* **SKILLS SECTION:** List skills, prioritizing those mentioned in the job description.
+* **EDUCATION SECTION:** Follow a clear format for degrees, institutions, and dates.
+
+**Input for Customization:**
+
+**Original Resume Text:**
+${resumeText}
+
+**Target Job Description Text:**
+${jobDescription}
+
+**Begin Customized Resume Output (Strictly Adhere to Format Requirements):**
+`,
         cover_letter: `Write a professional, compelling, and concise cover letter based on this resume and job description. Highlight the most relevant skills and experiences. Tailor the letter specifically to the job, expressing genuine interest.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
     };
 
@@ -386,8 +420,8 @@ Resume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
             }]
         }],
         generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 4096
+            temperature: 0.5, // Slightly lowered for more predictable formatting adherence
+            maxOutputTokens: 8000 // Increased slightly to ensure full resume can be processed and generated
         },
         safetySettings: [
             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
