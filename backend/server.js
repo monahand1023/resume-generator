@@ -5,6 +5,8 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const cors = require('cors');
 const path = require('path');
+const PDFDocument = require('pdfkit');
+const { Document, Packer, Paragraph, TextRun, HeadingLevel } = require('docx');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -82,21 +84,131 @@ async function customizeWithOpenAI(resumeText, jobDescription, apiKey, type) {
     return data.choices[0].message.content;
 }
 
+async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
+    const prompts = {
+        resume: `Customize this resume for the job. Focus on relevant skills and keywords. Keep same format but optimize content.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
+        cover_letter: `Write a professional cover letter based on this resume and job description.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
+    };
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            contents: [{
+                parts: [{
+                    text: prompts[type]
+                }]
+            }],
+            generationConfig: {
+                temperature: 0.7,
+                maxOutputTokens: 2000
+            }
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.candidates[0].content.parts[0].text;
+}
+
+function createPDF(content, title) {
+    return new Promise((resolve, reject) => {
+        try {
+            const doc = new PDFDocument({ margin: 50 });
+            const chunks = [];
+
+            doc.on('data', chunk => chunks.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+            // Add title
+            doc.fontSize(16).font('Helvetica-Bold').text(title, { align: 'center' });
+            doc.moveDown();
+
+            // Add content with proper formatting
+            const lines = content.split('\n');
+            for (const line of lines) {
+                if (line.trim()) {
+                    // Check if line looks like a header (all caps or ends with colon)
+                    if (line.trim().endsWith(':') || line.trim() === line.trim().toUpperCase()) {
+                        doc.fontSize(12).font('Helvetica-Bold').text(line.trim());
+                    } else {
+                        doc.fontSize(10).font('Helvetica').text(line.trim());
+                    }
+                } else {
+                    doc.moveDown(0.5);
+                }
+            }
+
+            doc.end();
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+async function createWordDoc(content, title) {
+    const paragraphs = content.split('\n').map(line => {
+        if (!line.trim()) {
+            return new Paragraph({ text: '' });
+        }
+
+        // Check if line looks like a header
+        if (line.trim().endsWith(':') || line.trim() === line.trim().toUpperCase()) {
+            return new Paragraph({
+                children: [new TextRun({ text: line.trim(), bold: true })],
+                heading: HeadingLevel.HEADING_2
+            });
+        }
+
+        return new Paragraph({
+            children: [new TextRun({ text: line.trim() })]
+        });
+    });
+
+    const doc = new Document({
+        sections: [{
+            children: [
+                new Paragraph({
+                    children: [new TextRun({ text: title, bold: true, size: 24 })],
+                    heading: HeadingLevel.TITLE
+                }),
+                ...paragraphs
+            ]
+        }]
+    });
+
+    return await Packer.toBuffer(doc);
+}
+
 app.post('/api/customize-resume', upload.single('resume'), async (req, res) => {
     try {
-        const { jobUrl, apiKey } = req.body;
+        const { jobUrl, apiKey, provider } = req.body;
         const resume = req.file?.buffer;
 
-        if (!jobUrl || !apiKey || !resume) {
+        if (!jobUrl || !apiKey || !resume || !provider) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
         const jobDescription = await scrapeJobDescription(jobUrl);
         const resumeText = await parseResumeFile(resume);
 
+        let customizeFunction;
+        if (provider === 'openai') {
+            customizeFunction = customizeWithOpenAI;
+        } else if (provider === 'gemini') {
+            customizeFunction = customizeWithGemini;
+        } else {
+            return res.status(400).json({ error: 'Invalid provider' });
+        }
+
         const [customizedResume, coverLetter] = await Promise.all([
-            customizeWithOpenAI(resumeText, jobDescription, apiKey, 'resume'),
-            customizeWithOpenAI(resumeText, jobDescription, apiKey, 'cover_letter')
+            customizeFunction(resumeText, jobDescription, apiKey, 'resume'),
+            customizeFunction(resumeText, jobDescription, apiKey, 'cover_letter')
         ]);
 
         res.json({
@@ -107,6 +219,40 @@ app.post('/api/customize-resume', upload.single('resume'), async (req, res) => {
     } catch (error) {
         console.error('Error:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/format-document', async (req, res) => {
+    try {
+        const { content, format, filename } = req.body;
+
+        if (!content || !format || !filename) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        let buffer;
+        let contentType;
+        let fileExtension;
+
+        if (format === 'pdf') {
+            buffer = await createPDF(content, filename);
+            contentType = 'application/pdf';
+            fileExtension = 'pdf';
+        } else if (format === 'docx') {
+            buffer = await createWordDoc(content, filename);
+            contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            fileExtension = 'docx';
+        } else {
+            return res.status(400).json({ error: 'Unsupported format' });
+        }
+
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}.${fileExtension}"`);
+        res.send(buffer);
+
+    } catch (error) {
+        console.error('Error formatting document:', error);
+        res.status(500).json({ error: 'Failed to format document' });
     }
 });
 
