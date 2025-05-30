@@ -172,17 +172,25 @@ function createStyledPDF(content, name, company, position) {
                         .text(line);
                     doc.moveDown(0.5);
 
-                    // Section headers (WORK EXPERIENCE, EDUCATION, etc.)
-                } else if (line.match(/^(WORK EXPERIENCE|EDUCATION|CERTIFICATIONS|KEY SKILLS)$/i)) {
+                    // Section headers (WORK EXPERIENCE, EDUCATION, etc.) and Summary
+                } else if (line.match(/^(WORK EXPERIENCE|EDUCATION|CERTIFICATIONS|KEY SKILLS|SUMMARY)$/i)) {
                     doc.fontSize(12)
                         .font('Helvetica-Bold')
                         .fillColor('#2c5aa0')
                         .text(line.toUpperCase());
                     doc.moveDown(0.3);
 
-                    // Company with location and dates on same line
-                } else if (line.includes('Seattle, WA') || line.includes('Tokyo, Japan') ||
-                    (line.includes('|') && (line.includes('202') || line.includes('201')))) {
+                    // Summary paragraph (after Summary header)
+                } else if (i > 0 && lines[i-1].match(/SUMMARY/i) && line.length > 50) {
+                    doc.fontSize(10)
+                        .font('Helvetica')
+                        .fillColor('#333333')
+                        .text(line, { width: 500 });
+                    doc.moveDown(0.5); // Extra space after summary
+
+                    // Company with location and dates on same line - improved date detection
+                } else if (line.includes('Seattle, WA') || line.includes('Tokyo, Japan') || line.includes('Evanston, IL') ||
+                    (line.includes('|') && (line.includes('202') || line.includes('201') || line.includes('/20') || line.includes('- 20')))) {
                     // Parse company, location, title, dates
                     const parts = line.split('|').map(p => p.trim());
                     if (parts.length >= 3) {
@@ -212,6 +220,33 @@ function createStyledPDF(content, name, company, position) {
                         .text(line);
                     doc.moveDown(0.2);
 
+                    // Company descriptions (any longer paragraph after job title)
+                } else if (line.length > 80 && !line.startsWith('•') && !line.startsWith('*') &&
+                    i > 0 && (lines[i-1].includes('Engineering Manager') || lines[i-1].includes('Software Development Manager') ||
+                        lines[i-1].includes('Manager,') || lines[i-1].includes('Seattle, WA') || lines[i-1].includes('Tokyo, Japan'))) {
+                    doc.fontSize(10)
+                        .font('Helvetica')
+                        .fillColor('#555555')
+                        .text(line, { width: 500 });
+                    doc.moveDown(0.3);
+
+                    // Work experience items - convert to bullets if not already
+                } else if ((lines[i-1] && (lines[i-1].includes('Engineering Manager') || lines[i-1].includes('Software Development Manager'))) ||
+                    (line.length > 30 && !line.startsWith('•') && !line.startsWith('*') &&
+                        (line.includes('Led') || line.includes('Managed') || line.includes('Developed') ||
+                            line.includes('Implemented') || line.includes('Founded') || line.includes('Delivered') ||
+                            line.includes('Spearheaded') || line.includes('Defined') || line.includes('Architected') ||
+                            line.includes('Established') || line.includes('Transformed') || line.includes('Authored')))) {
+                    doc.fontSize(10)
+                        .font('Helvetica')
+                        .fillColor('#333333')
+                        .text('• ' + line, {
+                            indent: 20,
+                            width: 500,
+                            lineGap: 2
+                        });
+                    doc.moveDown(0.1);
+
                     // Bullet points
                 } else if (line.startsWith('•') || line.startsWith('*')) {
                     const bulletText = line.replace(/^[•*]\s*/, '');
@@ -224,15 +259,6 @@ function createStyledPDF(content, name, company, position) {
                             lineGap: 2
                         });
                     doc.moveDown(0.1);
-
-                    // Company descriptions (italic paragraph)
-                } else if (line.length > 100 && !line.startsWith('•') &&
-                    (line.includes('platform') || line.includes('company') || line.includes('leader'))) {
-                    doc.fontSize(10)
-                        .font('Helvetica-Oblique')
-                        .fillColor('#666666')
-                        .text(line, { width: 500 });
-                    doc.moveDown(0.3);
 
                     // Education entries
                 } else if (line.includes('University') || line.includes('MIT') || line.includes('Bachelor') || line.includes('Massachusetts')) {
@@ -335,7 +361,11 @@ async function customizeWithOpenAI(resumeText, jobDescription, apiKey, type) {
 
 async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
     const prompts = {
-        resume: `Customize this resume for the job. Focus on relevant skills and keywords. Maintain a professional tone and structure. Optimize content for clarity and impact, ensuring it aligns closely with the job requirements.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
+        resume: `Customize this resume for the job. Focus on relevant skills and keywords. IMPORTANT: Keep ALL work experience, achievements, and dates. Do not remove or summarize any job experiences - preserve all bullet points and accomplishments. Only optimize wording and emphasize relevant skills.
+
+For companies that are not widely known (like startups or smaller companies), include a brief 1-2 line company description. Skip descriptions for well-known companies like Amazon, Google, Microsoft, Meta, etc.
+
+Resume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
         cover_letter: `Write a professional, compelling, and concise cover letter based on this resume and job description. Highlight the most relevant skills and experiences. Tailor the letter specifically to the job, expressing genuine interest.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
     };
 
@@ -402,7 +432,11 @@ async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
 
 async function customizeWithClaude(resumeText, jobDescription, apiKey, type) {
     const prompts = {
-        resume: `Customize this resume for the job. Focus on relevant skills and keywords. Keep same format but optimize content.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
+        resume: `Customize this resume for the job. Focus on relevant skills and keywords. IMPORTANT: Keep ALL work experience, achievements, and dates. Do not remove or summarize any job experiences - preserve all bullet points and accomplishments. Only optimize wording and emphasize relevant skills.
+
+For companies that are not widely known (like startups or smaller companies), include a brief 1-2 line company description. Skip descriptions for well-known companies like Amazon, Google, Microsoft, Meta, etc.
+
+Resume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
         cover_letter: `Write a professional cover letter based on this resume and job description.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
     };
 
@@ -415,7 +449,7 @@ async function customizeWithClaude(resumeText, jobDescription, apiKey, type) {
         },
         body: JSON.stringify({
             model: 'claude-3-sonnet-20240229',
-            max_tokens: 2000,
+            max_tokens: 3000,
             messages: [{
                 role: 'user',
                 content: prompts[type]
