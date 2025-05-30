@@ -1,14 +1,10 @@
-import express from 'express';
-import multer from 'multer';
-import puppeteer from 'puppeteer';
-import pdfParse from 'pdf-parse';
-import mammoth from 'mammoth';
-import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const express = require('express');
+const multer = require('multer');
+const puppeteer = require('puppeteer');
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
+const cors = require('cors');
+const path = require('path');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });

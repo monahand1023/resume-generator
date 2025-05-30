@@ -1,5 +1,5 @@
 # Build React frontend
-FROM node:18-alpine as frontend
+FROM node:20-alpine as frontend
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
@@ -8,7 +8,7 @@ COPY src/ ./src/
 RUN npm run build
 
 # Setup backend and serve
-FROM node:18-alpine
+FROM node:20-alpine
 WORKDIR /app
 
 # Install Chrome for Puppeteer
