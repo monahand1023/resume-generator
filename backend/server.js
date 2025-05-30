@@ -134,100 +134,126 @@ function createStyledPDF(content, name, company, position) {
             doc.on('data', chunk => chunks.push(chunk));
             doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-            // Clean the content first
-            const cleanContent = cleanAIResponse(content);
-            const lines = cleanContent.split('\n');
+            // Clean the content and remove markdown artifacts
+            const cleanContent = cleanAIResponse(content)
+                .replace(/\*\*/g, '') // Remove ** bold markers
+                .replace(/\*/g, '') // Remove * markers
+                .replace(/_{2,}/g, '') // Remove multiple underscores
+                .replace(/^_+|_+$/gm, '') // Remove leading/trailing underscores
+                .replace(/^#+\s*/gm, '') // Remove # headers
+                .replace(/`{1,3}/g, '') // Remove code markers
+                .trim();
 
-            let currentY = 50;
+            const lines = cleanContent.split('\n').filter(line => line.trim());
 
             for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                const trimmedLine = line.trim();
+                const line = lines[i].trim();
 
-                if (!trimmedLine) {
-                    doc.moveDown(0.3);
-                    continue;
-                }
+                if (!line) continue;
 
                 // Check if we need a new page
                 if (doc.y > 720) {
                     doc.addPage();
                 }
 
-                // Format different types of content
-                if (i === 0 && trimmedLine.length < 50 && !/[.:]/.test(trimmedLine)) {
-                    // Name/header at top
+                // Name at top (first non-empty line)
+                if (i === 0) {
                     doc.fontSize(18)
                         .font('Helvetica-Bold')
-                        .fillColor('#2c3e50')
-                        .text(trimmedLine, { align: 'center' });
-                    doc.moveDown(0.5);
-
-                } else if (trimmedLine.match(/^[A-Z\s&]+$/) && trimmedLine.length < 50) {
-                    // Section headers (all caps)
-                    doc.fontSize(12)
-                        .font('Helvetica-Bold')
-                        .fillColor('#34495e')
-                        .text(trimmedLine);
+                        .fillColor('#2c5aa0')
+                        .text(line, { align: 'left' });
                     doc.moveDown(0.3);
 
-                } else if (trimmedLine.includes('|') && (trimmedLine.includes('202') || trimmedLine.includes('201'))) {
-                    // Job titles with dates
-                    const parts = trimmedLine.split('|');
-                    if (parts.length >= 2) {
+                    // Contact info line
+                } else if (line.includes('@') || line.includes('linkedin') || line.includes('github')) {
+                    doc.fontSize(10)
+                        .font('Helvetica')
+                        .fillColor('#555555')
+                        .text(line);
+                    doc.moveDown(0.5);
+
+                    // Section headers (WORK EXPERIENCE, EDUCATION, etc.)
+                } else if (line.match(/^(WORK EXPERIENCE|EDUCATION|CERTIFICATIONS|KEY SKILLS)$/i)) {
+                    doc.fontSize(12)
+                        .font('Helvetica-Bold')
+                        .fillColor('#2c5aa0')
+                        .text(line.toUpperCase());
+                    doc.moveDown(0.3);
+
+                    // Company with location and dates on same line
+                } else if (line.includes('Seattle, WA') || line.includes('Tokyo, Japan') ||
+                    (line.includes('|') && (line.includes('202') || line.includes('201')))) {
+                    // Parse company, location, title, dates
+                    const parts = line.split('|').map(p => p.trim());
+                    if (parts.length >= 3) {
+                        // Company and location
                         doc.fontSize(11)
                             .font('Helvetica-Bold')
-                            .fillColor('#2c3e50')
-                            .text(parts[0].trim(), { continued: true })
+                            .fillColor('#000000')
+                            .text(parts[0], { continued: true })
                             .font('Helvetica')
-                            .fillColor('#7f8c8d')
-                            .text(' | ' + parts.slice(1).join(' | '));
+                            .text(' | ' + parts[1], { continued: true })
+                            .text(' | ' + parts[2]);
                     } else {
                         doc.fontSize(11)
                             .font('Helvetica-Bold')
-                            .fillColor('#2c3e50')
-                            .text(trimmedLine);
+                            .fillColor('#000000')
+                            .text(line);
                     }
                     doc.moveDown(0.2);
 
-                } else if (trimmedLine.startsWith('*') || trimmedLine.startsWith('•')) {
-                    // Bullet points
-                    const bulletText = trimmedLine.substring(1).trim();
-                    doc.fontSize(10)
-                        .font('Helvetica')
-                        .fillColor('#34495e')
-                        .text('• ' + bulletText, {
-                            indent: 20,
-                            width: 500
-                        });
-                    doc.moveDown(0.15);
-
-                } else if (trimmedLine.endsWith(':') && trimmedLine.length < 60) {
-                    // Subsection headers
+                    // Job titles (without company info)
+                } else if (line.includes('Engineering Manager') || line.includes('Software Development Manager') ||
+                    line.includes('Manager,') ||
+                    (i > 0 && lines[i-1].includes('Seattle, WA') && !line.startsWith('•'))) {
                     doc.fontSize(11)
                         .font('Helvetica-Bold')
-                        .fillColor('#2c3e50')
-                        .text(trimmedLine);
+                        .fillColor('#333333')
+                        .text(line);
                     doc.moveDown(0.2);
 
-                } else if (trimmedLine.match(/^\d{2}\/\d{4}/)) {
-                    // Date ranges
-                    doc.fontSize(10)
-                        .font('Helvetica-Oblique')
-                        .fillColor('#7f8c8d')
-                        .text(trimmedLine);
-                    doc.moveDown(0.2);
-
-                } else {
-                    // Regular text
+                    // Bullet points
+                } else if (line.startsWith('•') || line.startsWith('*')) {
+                    const bulletText = line.replace(/^[•*]\s*/, '');
                     doc.fontSize(10)
                         .font('Helvetica')
-                        .fillColor('#2c3e50')
-                        .text(trimmedLine, {
+                        .fillColor('#333333')
+                        .text('• ' + bulletText, {
+                            indent: 20,
                             width: 500,
-                            align: 'left'
+                            lineGap: 2
                         });
+                    doc.moveDown(0.1);
+
+                    // Company descriptions (italic paragraph)
+                } else if (line.length > 100 && !line.startsWith('•') &&
+                    (line.includes('platform') || line.includes('company') || line.includes('leader'))) {
+                    doc.fontSize(10)
+                        .font('Helvetica-Oblique')
+                        .fillColor('#666666')
+                        .text(line, { width: 500 });
+                    doc.moveDown(0.3);
+
+                    // Education entries
+                } else if (line.includes('University') || line.includes('MIT') || line.includes('Bachelor') || line.includes('Massachusetts')) {
+                    doc.fontSize(11)
+                        .font('Helvetica-Bold')
+                        .fillColor('#000000')
+                        .text(line);
+                    doc.moveDown(0.2);
+
+                    // Regular text/certifications
+                } else {
+                    doc.fontSize(10)
+                        .font('Helvetica')
+                        .fillColor('#333333')
+                        .text(line, { width: 500 });
                     doc.moveDown(0.15);
+                }
+
+                // Add extra space after company sections
+                if (line.includes('Amazon Japan') || line.includes('Tokyo, Japan')) {
+                    doc.moveDown(0.4);
                 }
             }
 
