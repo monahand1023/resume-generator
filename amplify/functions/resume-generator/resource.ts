@@ -1,7 +1,7 @@
 import { defineFunction } from '@aws-amplify/backend';
 
 export const customizeResume = defineFunction({
-    name: 'customize-resume',
+    name: 'resume-generator',
     entry: './handler.ts',
     runtime: 20,
     timeoutSeconds: 60,
