@@ -5,3 +5,19 @@ services:
       - "3000:3000"
     volumes:
       - ./uploads:/app/uploads
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/public/static/js
+          ignore:
+            - node_modules/
+        - action: sync
+          path: ./backend
+          target: /app
+          ignore:
+            - node_modules/
+        - action: rebuild
+          path: package.json
+        - action: rebuild
+          path: backend/package.json
