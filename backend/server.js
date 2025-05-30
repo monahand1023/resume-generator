@@ -15,6 +15,229 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Helper function to extract name from resume text
+function extractNameFromResume(resumeText) {
+    const lines = resumeText.split('\n').filter(line => line.trim());
+
+    // Look for name in first few lines
+    for (let i = 0; i < Math.min(5, lines.length); i++) {
+        const line = lines[i].trim();
+
+        // Skip common headers
+        if (line.toLowerCase().includes('resume') ||
+            line.toLowerCase().includes('curriculum') ||
+            line.toLowerCase().includes('cv')) {
+            continue;
+        }
+
+        // Look for a line that looks like a name (2-4 words, proper case)
+        const words = line.split(/\s+/);
+        if (words.length >= 2 && words.length <= 4) {
+            const isName = words.every(word =>
+                word.length > 1 &&
+                word[0] === word[0].toUpperCase() &&
+                !/\d/.test(word) && // No numbers
+                !word.includes('@') && // No email
+                !word.includes('(') // No phone
+            );
+
+            if (isName) {
+                return line;
+            }
+        }
+    }
+
+    return 'Resume'; // Fallback
+}
+
+// Helper function to extract company and position from job description
+function extractJobDetails(jobDescription) {
+    const lines = jobDescription.split('\n').filter(line => line.trim());
+
+    let company = '';
+    let position = '';
+
+    // Look for common patterns
+    for (const line of lines.slice(0, 20)) { // Check first 20 lines
+        const lower = line.toLowerCase();
+
+        // Look for company name patterns
+        if (!company && (
+            lower.includes('company') ||
+            lower.includes('about us') ||
+            lower.includes('organization') ||
+            line.length < 50 && /^[A-Z][a-zA-Z\s&.,Inc-]+$/.test(line.trim())
+        )) {
+            company = line.trim().split(/[:\-]/)[0].trim();
+        }
+
+        // Look for position title patterns
+        if (!position && (
+            lower.includes('position') ||
+            lower.includes('role') ||
+            lower.includes('job title') ||
+            (lower.includes('engineer') || lower.includes('manager') || lower.includes('developer')) &&
+            line.length < 80
+        )) {
+            position = line.trim().split(/[:\-]/)[0].trim();
+        }
+
+        if (company && position) break;
+    }
+
+    return { company: company || 'Company', position: position || 'Position' };
+}
+
+// Improved function to clean AI response and remove commentary
+function cleanAIResponse(content) {
+    // Split into lines and find where the actual resume content ends
+    const lines = content.split('\n');
+    const cleanedLines = [];
+    let inCommentary = false;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        const lower = line.toLowerCase();
+
+        // Detect start of commentary
+        if (lower.includes('this revised resume') ||
+            lower.includes('this resume') ||
+            lower.includes('the resume') ||
+            lower.includes('this version') ||
+            lower.includes('note:') ||
+            lower.includes('key changes') ||
+            lower.includes('summary of changes') ||
+            (lower.includes('focuses') && lower.includes('relevant')) ||
+            (lower.includes('highlights') && lower.includes('experience'))) {
+            inCommentary = true;
+            break;
+        }
+
+        if (!inCommentary && line) {
+            cleanedLines.push(lines[i]); // Keep original formatting
+        }
+    }
+
+    return cleanedLines.join('\n').trim();
+}
+
+// Enhanced PDF creation function
+function createStyledPDF(content, name, company, position) {
+    return new Promise((resolve, reject) => {
+        try {
+            const doc = new PDFDocument({
+                margin: 50,
+                size: 'A4'
+            });
+            const chunks = [];
+
+            doc.on('data', chunk => chunks.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+            // Clean the content first
+            const cleanContent = cleanAIResponse(content);
+            const lines = cleanContent.split('\n');
+
+            let currentY = 50;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmedLine = line.trim();
+
+                if (!trimmedLine) {
+                    doc.moveDown(0.3);
+                    continue;
+                }
+
+                // Check if we need a new page
+                if (doc.y > 720) {
+                    doc.addPage();
+                }
+
+                // Format different types of content
+                if (i === 0 && trimmedLine.length < 50 && !/[.:]/.test(trimmedLine)) {
+                    // Name/header at top
+                    doc.fontSize(18)
+                        .font('Helvetica-Bold')
+                        .fillColor('#2c3e50')
+                        .text(trimmedLine, { align: 'center' });
+                    doc.moveDown(0.5);
+
+                } else if (trimmedLine.match(/^[A-Z\s&]+$/) && trimmedLine.length < 50) {
+                    // Section headers (all caps)
+                    doc.fontSize(12)
+                        .font('Helvetica-Bold')
+                        .fillColor('#34495e')
+                        .text(trimmedLine);
+                    doc.moveDown(0.3);
+
+                } else if (trimmedLine.includes('|') && (trimmedLine.includes('202') || trimmedLine.includes('201'))) {
+                    // Job titles with dates
+                    const parts = trimmedLine.split('|');
+                    if (parts.length >= 2) {
+                        doc.fontSize(11)
+                            .font('Helvetica-Bold')
+                            .fillColor('#2c3e50')
+                            .text(parts[0].trim(), { continued: true })
+                            .font('Helvetica')
+                            .fillColor('#7f8c8d')
+                            .text(' | ' + parts.slice(1).join(' | '));
+                    } else {
+                        doc.fontSize(11)
+                            .font('Helvetica-Bold')
+                            .fillColor('#2c3e50')
+                            .text(trimmedLine);
+                    }
+                    doc.moveDown(0.2);
+
+                } else if (trimmedLine.startsWith('*') || trimmedLine.startsWith('•')) {
+                    // Bullet points
+                    const bulletText = trimmedLine.substring(1).trim();
+                    doc.fontSize(10)
+                        .font('Helvetica')
+                        .fillColor('#34495e')
+                        .text('• ' + bulletText, {
+                            indent: 20,
+                            width: 500
+                        });
+                    doc.moveDown(0.15);
+
+                } else if (trimmedLine.endsWith(':') && trimmedLine.length < 60) {
+                    // Subsection headers
+                    doc.fontSize(11)
+                        .font('Helvetica-Bold')
+                        .fillColor('#2c3e50')
+                        .text(trimmedLine);
+                    doc.moveDown(0.2);
+
+                } else if (trimmedLine.match(/^\d{2}\/\d{4}/)) {
+                    // Date ranges
+                    doc.fontSize(10)
+                        .font('Helvetica-Oblique')
+                        .fillColor('#7f8c8d')
+                        .text(trimmedLine);
+                    doc.moveDown(0.2);
+
+                } else {
+                    // Regular text
+                    doc.fontSize(10)
+                        .font('Helvetica')
+                        .fillColor('#2c3e50')
+                        .text(trimmedLine, {
+                            width: 500,
+                            align: 'left'
+                        });
+                    doc.moveDown(0.15);
+                }
+            }
+
+            doc.end();
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
 async function scrapeJobDescription(url) {
     const browser = await puppeteer.launch({
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
@@ -58,8 +281,8 @@ async function parseResumeFile(fileBuffer) {
 
 async function customizeWithOpenAI(resumeText, jobDescription, apiKey, type) {
     const prompts = {
-        resume: `Customize this resume for the job. Focus on relevant skills and keywords. Keep same format but optimize content.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
-        cover_letter: `Write a professional cover letter based on this resume and job description.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
+        resume: `Customize this resume for the job posting. Focus on relevant skills and keywords from the job description. Keep the same general format but optimize content for this specific role. Return ONLY the customized resume content without any commentary or explanation.\n\nOriginal Resume:\n${resumeText}\n\nJob Description:\n${jobDescription}\n\nCustomized Resume:`,
+        cover_letter: `Write a professional cover letter based on this resume and job description. Return ONLY the cover letter content without any commentary.\n\nResume:\n${resumeText}\n\nJob Description:\n${jobDescription}\n\nCover Letter:`
     };
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -90,12 +313,7 @@ async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
         cover_letter: `Write a professional, compelling, and concise cover letter based on this resume and job description. Highlight the most relevant skills and experiences. Tailor the letter specifically to the job, expressing genuine interest.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
     };
 
-    // --- Model Selection ---
-    // Using gemini-1.5-pro-latest for the highest capability.
-    // For a faster and more cost-effective option, consider 'gemini-1.5-flash-latest'.
     const modelName = 'gemini-1.5-pro-latest';
-    // const modelName = 'gemini-1.5-flash-latest'; // Alternative for speed/cost
-
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
     const requestBody = {
@@ -105,11 +323,9 @@ async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
             }]
         }],
         generationConfig: {
-            temperature: 0.7, // Adjust for creativity vs. determinism. Lower is more deterministic.
-            maxOutputTokens: 4096 // Increased token limit, suitable for newer models. Adjust as needed.
-                                  // gemini-1.5-pro can handle much larger contexts and outputs.
+            temperature: 0.7,
+            maxOutputTokens: 4096
         },
-        // Optional: Add safety settings for more control over content filtering
         safetySettings: [
             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
@@ -118,9 +334,6 @@ async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
         ],
     };
 
-    // Assuming Node.js v18+ for global fetch.
-    // If using an older version, ensure you have 'node-fetch' installed and imported:
-    // const fetch = require('node-fetch');
     const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -132,77 +345,73 @@ async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
     if (!response.ok) {
         let errorDetails = `Status: ${response.status}, StatusText: ${response.statusText}`;
         try {
-            const errorData = await response.json(); // Try to get detailed error from API
+            const errorData = await response.json();
             errorDetails += `, Response: ${JSON.stringify(errorData)}`;
         } catch (e) {
-            // If response.json() fails, try to get raw text
             const textError = await response.text();
             errorDetails += `, Response (raw): ${textError}`;
         }
         console.error('Gemini API Error:', errorDetails);
-        // It might be useful to throw an error object that contains the status code
         const err = new Error(`Gemini API request failed. ${errorDetails}`);
-        err.status = response.status; // Add status to the error object if needed
+        err.status = response.status;
         throw err;
     }
 
     const data = await response.json();
 
-    // Robustly check the response structure
     if (data.candidates && data.candidates.length > 0 &&
         data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts.length > 0 &&
-        typeof data.candidates[0].content.parts[0].text === 'string') { // Ensure text is a string
+        typeof data.candidates[0].content.parts[0].text === 'string') {
         return data.candidates[0].content.parts[0].text;
     } else if (data.promptFeedback && data.promptFeedback.blockReason) {
-        // Handle cases where content is blocked by safety settings
         const blockReason = data.promptFeedback.blockReason;
         const safetyRatings = JSON.stringify(data.promptFeedback.safetyRatings || 'No specific ratings provided.');
         console.error(`Gemini content blocked. Reason: ${blockReason}, Ratings: ${safetyRatings}`);
         throw new Error(`Your request was blocked by Gemini's safety filters. Reason: ${blockReason}. Please revise your input or check safety settings.`);
     } else {
-        // Handle other unexpected response structures
         console.warn("Gemini response structure unexpected, empty, or text part missing:", JSON.stringify(data));
         throw new Error('Gemini API returned an unexpected, empty, or improperly formatted response structure.');
     }
 }
 
-function createPDF(content, title) {
-    return new Promise((resolve, reject) => {
-        try {
-            const doc = new PDFDocument({ margin: 50 });
-            const chunks = [];
+async function customizeWithClaude(resumeText, jobDescription, apiKey, type) {
+    const prompts = {
+        resume: `Customize this resume for the job. Focus on relevant skills and keywords. Keep same format but optimize content.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
+        cover_letter: `Write a professional cover letter based on this resume and job description.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
+    };
 
-            doc.on('data', chunk => chunks.push(chunk));
-            doc.on('end', () => resolve(Buffer.concat(chunks)));
-
-            // Add title
-            doc.fontSize(16).font('Helvetica-Bold').text(title, { align: 'center' });
-            doc.moveDown();
-
-            // Add content with proper formatting
-            const lines = content.split('\n');
-            for (const line of lines) {
-                if (line.trim()) {
-                    // Check if line looks like a header (all caps or ends with colon)
-                    if (line.trim().endsWith(':') || line.trim() === line.trim().toUpperCase()) {
-                        doc.fontSize(12).font('Helvetica-Bold').text(line.trim());
-                    } else {
-                        doc.fontSize(10).font('Helvetica').text(line.trim());
-                    }
-                } else {
-                    doc.moveDown(0.5);
-                }
-            }
-
-            doc.end();
-        } catch (error) {
-            reject(error);
-        }
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+            model: 'claude-3-sonnet-20240229',
+            max_tokens: 2000,
+            messages: [{
+                role: 'user',
+                content: prompts[type]
+            }]
+        })
     });
+
+    if (!response.ok) {
+        throw new Error(`Claude API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.content[0].text;
+}
+
+function createPDF(content, title) {
+    return createStyledPDF(content, title, '', '');
 }
 
 async function createWordDoc(content, title) {
-    const paragraphs = content.split('\n').map(line => {
+    const cleanContent = cleanAIResponse(content);
+    const paragraphs = cleanContent.split('\n').map(line => {
         if (!line.trim()) {
             return new Paragraph({ text: '' });
         }
@@ -247,11 +456,17 @@ app.post('/api/customize-resume', upload.single('resume'), async (req, res) => {
         const jobDescription = await scrapeJobDescription(jobUrl);
         const resumeText = await parseResumeFile(resume);
 
+        // Extract metadata for better file naming
+        const name = extractNameFromResume(resumeText);
+        const jobDetails = extractJobDetails(jobDescription);
+
         let customizeFunction;
         if (provider === 'openai') {
             customizeFunction = customizeWithOpenAI;
         } else if (provider === 'gemini') {
             customizeFunction = customizeWithGemini;
+        } else if (provider === 'claude') {
+            customizeFunction = customizeWithClaude;
         } else {
             return res.status(400).json({ error: 'Invalid provider' });
         }
@@ -263,29 +478,23 @@ app.post('/api/customize-resume', upload.single('resume'), async (req, res) => {
 
         res.json({
             resume: customizedResume,
-            coverLetter: coverLetter
+            coverLetter: coverLetter,
+            metadata: {
+                name: name,
+                company: jobDetails.company,
+                position: jobDetails.position
+            }
         });
 
     } catch (error) {
         console.error('Error:', error);
-        let statusCode = 500;
-        let errorMessage = error.message;
-
-        if (error.message?.includes('429')) {
-            statusCode = 429;
-            errorMessage = 'API quota exceeded';
-        } else if (error.message?.includes('401')) {
-            statusCode = 401;
-            errorMessage = 'Invalid API key';
-        }
-
-        res.status(statusCode).json({ error: errorMessage });
+        res.status(500).json({ error: error.message });
     }
 });
 
 app.post('/api/format-document', async (req, res) => {
     try {
-        const { content, format, filename } = req.body;
+        const { content, format, filename, metadata } = req.body;
 
         if (!content || !format || !filename) {
             return res.status(400).json({ error: 'Missing required fields' });
@@ -296,7 +505,11 @@ app.post('/api/format-document', async (req, res) => {
         let fileExtension;
 
         if (format === 'pdf') {
-            buffer = await createPDF(content, filename);
+            const name = metadata?.name || 'Resume';
+            const company = metadata?.company || '';
+            const position = metadata?.position || '';
+
+            buffer = await createStyledPDF(content, name, company, position);
             contentType = 'application/pdf';
             fileExtension = 'pdf';
         } else if (format === 'docx') {

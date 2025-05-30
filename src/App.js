@@ -132,12 +132,28 @@ function App() {
         }
     };
 
-    const downloadFile = (content, filename, format = 'txt') => {
+    const generateFilename = (baseType, metadata, format) => {
+        if (!metadata) return `${baseType}.${format}`;
+
+        const { name, company, position } = metadata;
+        const cleanName = (name || 'Resume').replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+        const cleanCompany = (company || 'Company').replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+        const cleanPosition = (position || 'Position').replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+
+        if (baseType === 'resume') {
+            return `${cleanName}_Resume_${cleanCompany}_${cleanPosition}.${format}`;
+        } else {
+            return `${cleanName}_CoverLetter_${cleanCompany}_${cleanPosition}.${format}`;
+        }
+    };
+
+    const downloadFile = (content, baseFilename, format = 'txt', metadata = null) => {
         if (format === 'pdf' || format === 'docx') {
-            downloadFormattedFile(content, filename, format);
+            downloadFormattedFile(content, baseFilename, format, metadata);
             return;
         }
 
+        const filename = generateFilename(baseFilename, metadata, format);
         const blob = new Blob([content], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -147,12 +163,19 @@ function App() {
         URL.revokeObjectURL(url);
     };
 
-    const downloadFormattedFile = async (content, filename, format) => {
+    const downloadFormattedFile = async (content, baseFilename, format, metadata) => {
         try {
+            const filename = generateFilename(baseFilename, metadata, format);
+
             const response = await fetch('http://localhost:3000/api/format-document', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content, format, filename })
+                body: JSON.stringify({
+                    content,
+                    format,
+                    filename: filename.replace(`.${format}`, ''),
+                    metadata
+                })
             });
 
             if (!response.ok) throw new Error('Failed to format document');
@@ -161,7 +184,7 @@ function App() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${filename}.${format}`;
+            a.download = filename;
             a.click();
             URL.revokeObjectURL(url);
         } catch (err) {
@@ -508,6 +531,11 @@ function ResultsSection({ title, results, downloadFile, color }) {
         <div className={`border rounded-xl shadow-lg ${classes.header}`}>
             <div className={`p-4 border-b ${classes.header}`}>
                 <h2 className={`text-xl font-bold ${classes.title}`}>{title}</h2>
+                {results.metadata && (
+                    <p className="text-sm text-gray-600 mt-1">
+                        {results.metadata.name} • {results.metadata.company} • {results.metadata.position}
+                    </p>
+                )}
             </div>
 
             <div className="grid md:grid-cols-2 gap-6 p-6 bg-white">
@@ -515,25 +543,27 @@ function ResultsSection({ title, results, downloadFile, color }) {
                     title="Customized Resume"
                     icon={<FileText className="w-5 h-5 mr-2" />}
                     content={results.resume}
-                    filename="customized-resume"
+                    filename="resume"
                     downloadFile={downloadFile}
                     buttonClass={classes.button}
+                    metadata={results.metadata}
                 />
 
                 <DocumentCard
                     title="Cover Letter"
                     icon={<Mail className="w-5 h-5 mr-2" />}
                     content={results.coverLetter}
-                    filename="cover-letter"
+                    filename="cover_letter"
                     downloadFile={downloadFile}
                     buttonClass={classes.button}
+                    metadata={results.metadata}
                 />
             </div>
         </div>
     );
 }
 
-function DocumentCard({ title, icon, content, filename, downloadFile, buttonClass }) {
+function DocumentCard({ title, icon, content, filename, downloadFile, buttonClass, metadata }) {
     return (
         <div className="bg-white rounded-xl shadow-lg border">
             <div className="p-4 border-b">
@@ -552,21 +582,21 @@ function DocumentCard({ title, icon, content, filename, downloadFile, buttonClas
 
                 <div className="flex gap-2">
                     <button
-                        onClick={() => downloadFile(content, `${filename}.txt`)}
+                        onClick={() => downloadFile(content, filename, 'txt', metadata)}
                         className={`flex-1 ${buttonClass} text-white px-3 py-2 rounded text-sm font-medium transition-colors`}
                     >
                         <Download className="w-4 h-4 mr-1 inline" />
                         TXT
                     </button>
                     <button
-                        onClick={() => downloadFile(content, filename, 'pdf')}
+                        onClick={() => downloadFile(content, filename, 'pdf', metadata)}
                         className={`flex-1 ${buttonClass} text-white px-3 py-2 rounded text-sm font-medium transition-colors`}
                     >
                         <Download className="w-4 h-4 mr-1 inline" />
                         PDF
                     </button>
                     <button
-                        onClick={() => downloadFile(content, filename, 'docx')}
+                        onClick={() => downloadFile(content, filename, 'docx', metadata)}
                         className={`flex-1 ${buttonClass} text-white px-3 py-2 rounded text-sm font-medium transition-colors`}
                     >
                         <Download className="w-4 h-4 mr-1 inline" />
