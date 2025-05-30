@@ -86,34 +86,84 @@ async function customizeWithOpenAI(resumeText, jobDescription, apiKey, type) {
 
 async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
     const prompts = {
-        resume: `Customize this resume for the job. Focus on relevant skills and keywords. Keep same format but optimize content.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
-        cover_letter: `Write a professional cover letter based on this resume and job description.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
+        resume: `Customize this resume for the job. Focus on relevant skills and keywords. Maintain a professional tone and structure. Optimize content for clarity and impact, ensuring it aligns closely with the job requirements.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
+        cover_letter: `Write a professional, compelling, and concise cover letter based on this resume and job description. Highlight the most relevant skills and experiences. Tailor the letter specifically to the job, expressing genuine interest.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
     };
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+    // --- Model Selection ---
+    // Using gemini-1.5-pro-latest for the highest capability.
+    // For a faster and more cost-effective option, consider 'gemini-1.5-flash-latest'.
+    const modelName = 'gemini-1.5-pro-latest';
+    // const modelName = 'gemini-1.5-flash-latest'; // Alternative for speed/cost
+
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+    const requestBody = {
+        contents: [{
+            parts: [{
+                text: prompts[type]
+            }]
+        }],
+        generationConfig: {
+            temperature: 0.7, // Adjust for creativity vs. determinism. Lower is more deterministic.
+            maxOutputTokens: 4096 // Increased token limit, suitable for newer models. Adjust as needed.
+                                  // gemini-1.5-pro can handle much larger contexts and outputs.
+        },
+        // Optional: Add safety settings for more control over content filtering
+        safetySettings: [
+            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+        ],
+    };
+
+    // Assuming Node.js v18+ for global fetch.
+    // If using an older version, ensure you have 'node-fetch' installed and imported:
+    // const fetch = require('node-fetch');
+    const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-            contents: [{
-                parts: [{
-                    text: prompts[type]
-                }]
-            }],
-            generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 2000
-            }
-        })
+        body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.statusText}`);
+        let errorDetails = `Status: ${response.status}, StatusText: ${response.statusText}`;
+        try {
+            const errorData = await response.json(); // Try to get detailed error from API
+            errorDetails += `, Response: ${JSON.stringify(errorData)}`;
+        } catch (e) {
+            // If response.json() fails, try to get raw text
+            const textError = await response.text();
+            errorDetails += `, Response (raw): ${textError}`;
+        }
+        console.error('Gemini API Error:', errorDetails);
+        // It might be useful to throw an error object that contains the status code
+        const err = new Error(`Gemini API request failed. ${errorDetails}`);
+        err.status = response.status; // Add status to the error object if needed
+        throw err;
     }
 
     const data = await response.json();
-    return data.candidates[0].content.parts[0].text;
+
+    // Robustly check the response structure
+    if (data.candidates && data.candidates.length > 0 &&
+        data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts.length > 0 &&
+        typeof data.candidates[0].content.parts[0].text === 'string') { // Ensure text is a string
+        return data.candidates[0].content.parts[0].text;
+    } else if (data.promptFeedback && data.promptFeedback.blockReason) {
+        // Handle cases where content is blocked by safety settings
+        const blockReason = data.promptFeedback.blockReason;
+        const safetyRatings = JSON.stringify(data.promptFeedback.safetyRatings || 'No specific ratings provided.');
+        console.error(`Gemini content blocked. Reason: ${blockReason}, Ratings: ${safetyRatings}`);
+        throw new Error(`Your request was blocked by Gemini's safety filters. Reason: ${blockReason}. Please revise your input or check safety settings.`);
+    } else {
+        // Handle other unexpected response structures
+        console.warn("Gemini response structure unexpected, empty, or text part missing:", JSON.stringify(data));
+        throw new Error('Gemini API returned an unexpected, empty, or improperly formatted response structure.');
+    }
 }
 
 function createPDF(content, title) {
@@ -218,7 +268,18 @@ app.post('/api/customize-resume', upload.single('resume'), async (req, res) => {
 
     } catch (error) {
         console.error('Error:', error);
-        res.status(500).json({ error: error.message });
+        let statusCode = 500;
+        let errorMessage = error.message;
+
+        if (error.message?.includes('429')) {
+            statusCode = 429;
+            errorMessage = 'API quota exceeded';
+        } else if (error.message?.includes('401')) {
+            statusCode = 401;
+            errorMessage = 'Invalid API key';
+        }
+
+        res.status(statusCode).json({ error: errorMessage });
     }
 });
 

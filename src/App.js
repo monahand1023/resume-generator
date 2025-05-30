@@ -1,23 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Link, Key, FileText, Mail, Loader2, Download, Settings, Eye, EyeOff } from 'lucide-react';
+import { Upload, Link, Key, FileText, Mail, Loader2, Download, Eye, EyeOff } from 'lucide-react';
 
 function App() {
     const [openaiKey, setOpenaiKey] = useState('');
     const [geminiKey, setGeminiKey] = useState('');
+    const [claudeKey, setClaudeKey] = useState('');
     const [jobUrl, setJobUrl] = useState('');
     const [resume, setResume] = useState(null);
-    const [loading, setLoading] = useState({ openai: false, gemini: false });
-    const [results, setResults] = useState({ openai: null, gemini: null });
+    const [loading, setLoading] = useState({ openai: false, gemini: false, claude: false });
+    const [results, setResults] = useState({ openai: null, gemini: null, claude: null });
     const [error, setError] = useState('');
-    const [showApiKeys, setShowApiKeys] = useState(false);
-    const [showKeys, setShowKeys] = useState({ openai: false, gemini: false });
+    const [dragActive, setDragActive] = useState(false);
+    const [showKeys, setShowKeys] = useState({ openai: false, gemini: false, claude: false });
 
     // Load API keys from localStorage on component mount
     useEffect(() => {
         const savedOpenaiKey = localStorage.getItem('openai_api_key');
         const savedGeminiKey = localStorage.getItem('gemini_api_key');
+        const savedClaudeKey = localStorage.getItem('claude_api_key');
         if (savedOpenaiKey) setOpenaiKey(savedOpenaiKey);
         if (savedGeminiKey) setGeminiKey(savedGeminiKey);
+        if (savedClaudeKey) setClaudeKey(savedClaudeKey);
     }, []);
 
     // Save API keys to localStorage whenever they change
@@ -37,6 +40,40 @@ function App() {
         }
     }, [geminiKey]);
 
+    useEffect(() => {
+        if (claudeKey) {
+            localStorage.setItem('claude_api_key', claudeKey);
+        } else {
+            localStorage.removeItem('claude_api_key');
+        }
+    }, [claudeKey]);
+
+    const handleDrag = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.type === "dragenter" || e.type === "dragover") {
+            setDragActive(true);
+        } else if (e.type === "dragleave") {
+            setDragActive(false);
+        }
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            const file = e.dataTransfer.files[0];
+            if (file.type === 'application/pdf' || file.type.includes('document')) {
+                setResume(file);
+                setError('');
+            } else {
+                setError('Please upload a PDF or Word document');
+            }
+        }
+    };
+
     const handleFileUpload = (e) => {
         const file = e.target.files[0];
         if (file && (file.type === 'application/pdf' || file.type.includes('document'))) {
@@ -48,7 +85,8 @@ function App() {
     };
 
     const handleSubmit = async (provider) => {
-        const apiKey = provider === 'openai' ? openaiKey : geminiKey;
+        const apiKeys = { openai: openaiKey, gemini: geminiKey, claude: claudeKey };
+        const apiKey = apiKeys[provider];
 
         if (!apiKey || !jobUrl || !resume) {
             setError('Please fill in all required fields');
@@ -65,7 +103,7 @@ function App() {
             formData.append('apiKey', apiKey);
             formData.append('provider', provider);
 
-            const response = await fetch('/api/customize-resume', {
+            const response = await fetch('http://localhost:3000/api/customize-resume', {
                 method: 'POST',
                 body: formData,
             });
@@ -77,7 +115,18 @@ function App() {
             const data = await response.json();
             setResults(prev => ({ ...prev, [provider]: data }));
         } catch (err) {
-            setError(err.message || 'Something went wrong');
+            let errorMessage = err.message || 'Something went wrong';
+
+            // Handle specific API errors
+            if (err.message?.includes('429') || err.message?.includes('quota')) {
+                errorMessage = `${provider} API quota exceeded. Please check your billing or try again later.`;
+            } else if (err.message?.includes('401') || err.message?.includes('unauthorized')) {
+                errorMessage = `Invalid ${provider} API key. Please check your key.`;
+            } else if (err.message?.includes('403')) {
+                errorMessage = `${provider} API access denied. Check your permissions.`;
+            }
+
+            setError(errorMessage);
         } finally {
             setLoading(prev => ({ ...prev, [provider]: false }));
         }
@@ -85,7 +134,6 @@ function App() {
 
     const downloadFile = (content, filename, format = 'txt') => {
         if (format === 'pdf' || format === 'docx') {
-            // For PDF/Word downloads, we'll need to call a backend endpoint
             downloadFormattedFile(content, filename, format);
             return;
         }
@@ -101,7 +149,7 @@ function App() {
 
     const downloadFormattedFile = async (content, filename, format) => {
         try {
-            const response = await fetch('/api/format-document', {
+            const response = await fetch('http://localhost:3000/api/format-document', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content, format, filename })
@@ -121,13 +169,18 @@ function App() {
         }
     };
 
+    // Temporary simple validation for debugging
     const hasOpenaiKey = Boolean(openaiKey?.trim());
     const hasGeminiKey = Boolean(geminiKey?.trim());
+    const hasClaudeKey = Boolean(claudeKey?.trim());
     const canSubmit = Boolean(jobUrl?.trim() && resume);
+
+    // Debug logging
+    console.log('Debug - hasGeminiKey:', hasGeminiKey, 'canSubmit:', canSubmit, 'geminiKey length:', geminiKey?.length);
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
-            <div className="max-w-4xl mx-auto">
+            <div className="max-w-6xl mx-auto">
                 <div className="text-center mb-8">
                     <h1 className="text-4xl font-bold text-gray-900 mb-2">Resume Customizer</h1>
                     <p className="text-gray-600">Upload your resume and job URL to get AI-customized resumes and cover letters</p>
@@ -135,70 +188,104 @@ function App() {
 
                 <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
                     <div className="space-y-6">
-                        {/* API Keys Section */}
+                        {/* API Keys Section - Always Visible */}
                         <div className="border-b pb-6">
-                            <button
-                                onClick={() => setShowApiKeys(!showApiKeys)}
-                                className="flex items-center text-lg font-semibold text-gray-900 mb-4 hover:text-blue-600 transition-colors"
-                            >
-                                <Settings className="w-5 h-5 mr-2" />
+                            <h2 className="flex items-center text-lg font-semibold text-gray-900 mb-4">
+                                <Key className="w-5 h-5 mr-2" />
                                 API Configuration
-                                <span className="ml-auto text-sm">
-                                    {showApiKeys ? '▲' : '▼'}
-                                </span>
-                            </button>
+                            </h2>
 
-                            {showApiKeys && (
-                                <div className="grid md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                                            <Key className="w-4 h-4 mr-2" />
-                                            OpenAI API Key
-                                            {hasOpenaiKey && <span className="ml-2 text-green-600 text-xs">✓ Saved</span>}
-                                        </label>
-                                        <div className="relative">
-                                            <input
-                                                type={showKeys.openai ? "text" : "password"}
-                                                value={openaiKey}
-                                                onChange={(e) => setOpenaiKey(e.target.value)}
-                                                placeholder="sk-..."
-                                                className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowKeys(prev => ({ ...prev, openai: !prev.openai }))}
-                                                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                            >
-                                                {showKeys.openai ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                                            <Key className="w-4 h-4 mr-2" />
-                                            Gemini API Key
-                                            {hasGeminiKey && <span className="ml-2 text-green-600 text-xs">✓ Saved</span>}
-                                        </label>
-                                        <div className="relative">
-                                            <input
-                                                type={showKeys.gemini ? "text" : "password"}
-                                                value={geminiKey}
-                                                onChange={(e) => setGeminiKey(e.target.value)}
-                                                placeholder="AI..."
-                                                className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowKeys(prev => ({ ...prev, gemini: !prev.gemini }))}
-                                                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                            >
-                                                {showKeys.gemini ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                            </button>
-                                        </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
+                                        OpenAI API Key
+                                        {hasOpenaiKey && <span className="ml-2 text-green-600 text-xs">✓ Valid</span>}
+                                        {openaiKey?.trim() && !hasOpenaiKey && <span className="ml-2 text-red-600 text-xs">✗ Invalid format</span>}
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type={showKeys.openai ? "text" : "password"}
+                                            value={openaiKey}
+                                            onChange={(e) => setOpenaiKey(e.target.value)}
+                                            placeholder="sk-..."
+                                            className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                                openaiKey?.trim() && !hasOpenaiKey
+                                                    ? 'border-red-300 bg-red-50'
+                                                    : hasOpenaiKey
+                                                        ? 'border-green-300 bg-green-50'
+                                                        : 'border-gray-300'
+                                            }`}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowKeys(prev => ({ ...prev, openai: !prev.openai }))}
+                                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                        >
+                                            {showKeys.openai ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                        </button>
                                     </div>
                                 </div>
-                            )}
+
+                                <div>
+                                    <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
+                                        Gemini API Key
+                                        {hasGeminiKey && <span className="ml-2 text-green-600 text-xs">✓ Valid</span>}
+                                        {geminiKey?.trim() && !hasGeminiKey && <span className="ml-2 text-red-600 text-xs">✗ Invalid format</span>}
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type={showKeys.gemini ? "text" : "password"}
+                                            value={geminiKey}
+                                            onChange={(e) => setGeminiKey(e.target.value)}
+                                            placeholder="AI..."
+                                            className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                                geminiKey?.trim() && !hasGeminiKey
+                                                    ? 'border-red-300 bg-red-50'
+                                                    : hasGeminiKey
+                                                        ? 'border-green-300 bg-green-50'
+                                                        : 'border-gray-300'
+                                            }`}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowKeys(prev => ({ ...prev, gemini: !prev.gemini }))}
+                                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                        >
+                                            {showKeys.gemini ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
+                                        Claude API Key
+                                        {hasClaudeKey && <span className="ml-2 text-green-600 text-xs">✓ Valid</span>}
+                                        {claudeKey?.trim() && !hasClaudeKey && <span className="ml-2 text-red-600 text-xs">✗ Invalid format</span>}
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type={showKeys.claude ? "text" : "password"}
+                                            value={claudeKey}
+                                            onChange={(e) => setClaudeKey(e.target.value)}
+                                            placeholder="sk-ant-..."
+                                            className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                                claudeKey?.trim() && !hasClaudeKey
+                                                    ? 'border-red-300 bg-red-50'
+                                                    : hasClaudeKey
+                                                        ? 'border-green-300 bg-green-50'
+                                                        : 'border-gray-300'
+                                            }`}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowKeys(prev => ({ ...prev, claude: !prev.claude }))}
+                                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                        >
+                                            {showKeys.claude ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Job URL */}
@@ -222,7 +309,19 @@ function App() {
                                 <Upload className="w-4 h-4 mr-2" />
                                 Resume (PDF or Word)
                             </label>
-                            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+                            <div
+                                className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 ${
+                                    dragActive
+                                        ? 'border-green-400 bg-green-50'
+                                        : resume
+                                            ? 'border-green-300 bg-green-50'
+                                            : 'border-gray-300 hover:border-blue-400'
+                                }`}
+                                onDragEnter={handleDrag}
+                                onDragLeave={handleDrag}
+                                onDragOver={handleDrag}
+                                onDrop={handleDrop}
+                            >
                                 <input
                                     type="file"
                                     onChange={handleFileUpload}
@@ -234,12 +333,19 @@ function App() {
                                     {resume ? (
                                         <div className="text-green-600">
                                             <FileText className="w-8 h-8 mx-auto mb-2" />
-                                            <p>{resume.name}</p>
+                                            <p className="font-medium">{resume.name}</p>
+                                            <p className="text-sm text-green-500">✓ Ready to process</p>
+                                        </div>
+                                    ) : dragActive ? (
+                                        <div className="text-green-600">
+                                            <Upload className="w-8 h-8 mx-auto mb-2" />
+                                            <p className="font-medium">Drop your resume here</p>
                                         </div>
                                     ) : (
                                         <div className="text-gray-500">
                                             <Upload className="w-8 h-8 mx-auto mb-2" />
-                                            <p>Click to upload your resume</p>
+                                            <p>Drag & drop your resume or click to upload</p>
+                                            <p className="text-xs mt-1">PDF or Word documents only</p>
                                         </div>
                                     )}
                                 </label>
@@ -253,50 +359,93 @@ function App() {
                         )}
 
                         {/* Action Buttons */}
-                        <div className="grid md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-3 gap-4">
                             <button
                                 onClick={() => handleSubmit('openai')}
                                 disabled={!hasOpenaiKey || !canSubmit || loading.openai}
-                                className={`w-full font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center ${
+                                className={`w-full font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center ${
                                     hasOpenaiKey && canSubmit
                                         ? 'bg-green-600 hover:bg-green-700 text-white'
                                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                 }`}
+                                title={!hasOpenaiKey ? "Enter OpenAI API key" : !canSubmit ? "Add job URL and upload resume" : ""}
                             >
                                 {loading.openai ? (
                                     <>
-                                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                                        Processing with OpenAI...
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        OpenAI...
                                     </>
                                 ) : (
-                                    <>Generate with OpenAI</>
+                                    <>OpenAI</>
                                 )}
                             </button>
 
                             <button
                                 onClick={() => handleSubmit('gemini')}
                                 disabled={!hasGeminiKey || !canSubmit || loading.gemini}
-                                className={`w-full font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center ${
+                                className={`w-full font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center ${
                                     hasGeminiKey && canSubmit
                                         ? 'bg-blue-600 hover:bg-blue-700 text-white'
                                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                 }`}
+                                title={!hasGeminiKey ? "Enter Gemini API key" : !canSubmit ? "Add job URL and upload resume" : ""}
                             >
                                 {loading.gemini ? (
                                     <>
-                                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                                        Processing with Gemini...
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        Gemini...
                                     </>
                                 ) : (
-                                    <>Generate with Gemini</>
+                                    <>Gemini</>
+                                )}
+                            </button>
+
+                            <button
+                                onClick={() => handleSubmit('claude')}
+                                disabled={!hasClaudeKey || !canSubmit || loading.claude}
+                                className={`w-full font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center ${
+                                    hasClaudeKey && canSubmit
+                                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                }`}
+                                title={!hasClaudeKey ? "Enter Claude API key" : !canSubmit ? "Add job URL and upload resume" : ""}
+                            >
+                                {loading.claude ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        Claude...
+                                    </>
+                                ) : (
+                                    <>Claude</>
                                 )}
                             </button>
                         </div>
+
+                        {/* Status Message */}
+                        {(!jobUrl?.trim() || !resume) && (
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-800">
+                                <div className="flex items-start">
+                                    <div className="flex-shrink-0">
+                                        <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    <div className="ml-3">
+                                        <p className="text-sm">
+                                            To generate customized resumes, please:
+                                            {!jobUrl?.trim() && !resume && " add a job URL and upload your resume"}
+                                            {!jobUrl?.trim() && resume && " add a job URL"}
+                                            {jobUrl?.trim() && !resume && " upload your resume"}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 {/* Results Section */}
-                {(results.openai || results.gemini) && (
+                {(results.openai || results.gemini || results.claude) && (
                     <div className="space-y-8">
                         {results.openai && (
                             <ResultsSection
@@ -312,6 +461,14 @@ function App() {
                                 results={results.gemini}
                                 downloadFile={downloadFile}
                                 color="blue"
+                            />
+                        )}
+                        {results.claude && (
+                            <ResultsSection
+                                title="Claude Results"
+                                results={results.claude}
+                                downloadFile={downloadFile}
+                                color="purple"
                             />
                         )}
                     </div>
@@ -332,6 +489,16 @@ function ResultsSection({ title, results, downloadFile, color }) {
             header: 'bg-blue-50 border-blue-200',
             title: 'text-blue-800',
             button: 'bg-blue-600 hover:bg-blue-700'
+        },
+        purple: {
+            header: 'bg-purple-50 border-purple-200',
+            title: 'text-purple-800',
+            button: 'bg-purple-600 hover:bg-purple-700'
+        },
+        orange: {
+            header: 'bg-orange-50 border-orange-200',
+            title: 'text-orange-800',
+            button: 'bg-orange-600 hover:bg-orange-700'
         }
     };
 
