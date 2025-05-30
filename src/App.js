@@ -36,7 +36,7 @@ function App() {
             formData.append('jobUrl', jobUrl);
             formData.append('apiKey', apiKey);
 
-            const response = await fetch('https://your-api-gateway-url.execute-api.region.amazonaws.com/customize-resume', {
+            const response = await fetch('/api/customize-resume', {
                 method: 'POST',
                 body: formData,
             });
