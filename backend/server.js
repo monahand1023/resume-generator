@@ -365,6 +365,13 @@ async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
 
 For companies that are not widely known (like startups or smaller companies), include a brief 1-2 line company description. Skip descriptions for well-known companies like Amazon, Google, Microsoft, Meta, etc.
 
+FORMAT REQUIREMENTS - Use these exact prefixes for easy parsing:
+- Company lines: "COMPANY: [Company Name] [Location] • [Dates]"  
+- Job titles: "TITLE: [Job Title]"
+- Company descriptions: "DESC: [Description]"
+- All work achievements: Start with "• [Achievement]"
+- Section headers: Use ALL CAPS (WORK EXPERIENCE, EDUCATION, etc.)
+
 Resume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
         cover_letter: `Write a professional, compelling, and concise cover letter based on this resume and job description. Highlight the most relevant skills and experiences. Tailor the letter specifically to the job, expressing genuine interest.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
     };
@@ -430,6 +437,133 @@ Resume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
     }
 }
 
+async function createWordDoc(content, title) {
+    const cleanContent = cleanAIResponse(content)
+        .replace(/\*\*/g, '') // Remove ** bold markers
+        .replace(/\*/g, '') // Remove * markers
+        .replace(/_{2,}/g, '') // Remove multiple underscores
+        .replace(/^_+|_+$/gm, '') // Remove leading/trailing underscores
+        .replace(/^#+\s*/gm, '') // Remove # headers
+        .replace(/`{1,3}/g, '') // Remove code markers
+        .trim();
+
+    const lines = cleanContent.split('\n').filter(line => line.trim());
+    const children = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        // Name (first line)
+        if (i === 0) {
+            children.push(new Paragraph({
+                children: [new TextRun({
+                    text: line,
+                    bold: true,
+                    size: 36,
+                    color: "2c5aa0"
+                })],
+                spacing: { after: 200 }
+            }));
+
+            // Contact info (has @ or phone patterns)
+        } else if (line.includes('@') || /\(\d{3}\)/.test(line)) {
+            children.push(new Paragraph({
+                children: [new TextRun({
+                    text: line,
+                    size: 20,
+                    color: "555555"
+                })],
+                spacing: { after: 300 }
+            }));
+
+            // Section headers (ALL CAPS)
+        } else if (line === line.toUpperCase() && line.length < 30) {
+            children.push(new Paragraph({
+                children: [new TextRun({
+                    text: line,
+                    bold: true,
+                    size: 24,
+                    color: "2c5aa0"
+                })],
+                spacing: { before: 200, after: 200 }
+            }));
+
+            // Company lines (Gemini formatted with COMPANY:)
+        } else if (line.startsWith('COMPANY:')) {
+            children.push(new Paragraph({
+                children: [new TextRun({
+                    text: line.replace('COMPANY: ', ''),
+                    bold: true,
+                    size: 24,
+                    color: "000000"
+                })],
+                spacing: { before: 200, after: 100 }
+            }));
+
+            // Job titles (Gemini formatted with TITLE:)
+        } else if (line.startsWith('TITLE:')) {
+            children.push(new Paragraph({
+                children: [new TextRun({
+                    text: line.replace('TITLE: ', ''),
+                    bold: true,
+                    size: 20,
+                    color: "333333"
+                })],
+                spacing: { after: 100 }
+            }));
+
+            // Company descriptions (Gemini formatted with DESC:)
+        } else if (line.startsWith('DESC:')) {
+            children.push(new Paragraph({
+                children: [new TextRun({
+                    text: line.replace('DESC: ', ''),
+                    size: 20,
+                    color: "555555",
+                    italics: true
+                })],
+                spacing: { after: 200 }
+            }));
+
+            // Bullets (work experience)
+        } else if (line.startsWith('•')) {
+            children.push(new Paragraph({
+                children: [new TextRun({
+                    text: line,
+                    size: 20,
+                    color: "333333"
+                })],
+                indent: { left: 200 },
+                spacing: { after: 100 }
+            }));
+
+            // Everything else (regular text)
+        } else {
+            children.push(new Paragraph({
+                children: [new TextRun({
+                    text: line,
+                    size: 20,
+                    color: "333333"
+                })],
+                spacing: { after: 100 }
+            }));
+        }
+    }
+
+    const doc = new Document({
+        sections: [{
+            properties: {
+                page: {
+                    margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 }
+                }
+            },
+            children: children
+        }]
+    });
+
+    return await Packer.toBuffer(doc);
+}
+
 async function customizeWithClaude(resumeText, jobDescription, apiKey, type) {
     const prompts = {
         resume: `Customize this resume for the job. Focus on relevant skills and keywords. IMPORTANT: Keep ALL work experience, achievements, and dates. Do not remove or summarize any job experiences - preserve all bullet points and accomplishments. Only optimize wording and emphasize relevant skills.
@@ -467,41 +601,6 @@ Resume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
 
 function createPDF(content, title) {
     return createStyledPDF(content, title, '', '');
-}
-
-async function createWordDoc(content, title) {
-    const cleanContent = cleanAIResponse(content);
-    const paragraphs = cleanContent.split('\n').map(line => {
-        if (!line.trim()) {
-            return new Paragraph({ text: '' });
-        }
-
-        // Check if line looks like a header
-        if (line.trim().endsWith(':') || line.trim() === line.trim().toUpperCase()) {
-            return new Paragraph({
-                children: [new TextRun({ text: line.trim(), bold: true })],
-                heading: HeadingLevel.HEADING_2
-            });
-        }
-
-        return new Paragraph({
-            children: [new TextRun({ text: line.trim() })]
-        });
-    });
-
-    const doc = new Document({
-        sections: [{
-            children: [
-                new Paragraph({
-                    children: [new TextRun({ text: title, bold: true, size: 24 })],
-                    heading: HeadingLevel.TITLE
-                }),
-                ...paragraphs
-            ]
-        }]
-    });
-
-    return await Packer.toBuffer(doc);
 }
 
 app.post('/api/customize-resume', upload.single('resume'), async (req, res) => {
