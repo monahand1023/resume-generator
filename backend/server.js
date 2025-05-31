@@ -134,152 +134,221 @@ function createStyledPDF(content, name, company, position) {
             doc.on('data', chunk => chunks.push(chunk));
             doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-            // Clean the content and remove markdown artifacts
-            const cleanContent = cleanAIResponse(content)
-                .replace(/\*\*/g, '') // Remove ** bold markers
-                .replace(/\*/g, '') // Remove * markers
-                .replace(/_{2,}/g, '') // Remove multiple underscores
-                .replace(/^_+|_+$/gm, '') // Remove leading/trailing underscores
-                .replace(/^#+\s*/gm, '') // Remove # headers
-                .replace(/`{1,3}/g, '') // Remove code markers
-                .trim();
+            const lines = content.split('\n');
 
-            const lines = cleanContent.split('\n').filter(line => line.trim());
+            // Check if content uses marker format
+            const hasMarkers = lines.some(line =>
+                line.includes('NAME:') || line.includes('SECTION:') ||
+                line.includes('COMPANY:') || line.includes('TITLE:')
+            );
 
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i].trim();
+            if (hasMarkers) {
+                // Process marker-based format
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
 
-                if (!line) continue;
-
-                // Check if we need a new page
-                if (doc.y > 720) {
-                    doc.addPage();
-                }
-
-                // Name at top (first non-empty line)
-                if (i === 0) {
-                    doc.fontSize(18)
-                        .font('Helvetica-Bold')
-                        .fillColor('#2c5aa0')
-                        .text(line, { align: 'left' });
-                    doc.moveDown(0.3);
-
-                    // Contact info line
-                } else if (line.includes('@') || line.includes('linkedin') || line.includes('github')) {
-                    doc.fontSize(10)
-                        .font('Helvetica')
-                        .fillColor('#555555')
-                        .text(line);
-                    doc.moveDown(0.5);
-
-                    // Section headers (WORK EXPERIENCE, EDUCATION, etc.) and Summary
-                } else if (line.match(/^(WORK EXPERIENCE|EDUCATION|CERTIFICATIONS|KEY SKILLS|SUMMARY)$/i)) {
-                    doc.fontSize(12)
-                        .font('Helvetica-Bold')
-                        .fillColor('#2c5aa0')
-                        .text(line.toUpperCase());
-                    doc.moveDown(0.3);
-
-                    // Summary paragraph (after Summary header)
-                } else if (i > 0 && lines[i-1].match(/SUMMARY/i) && line.length > 50) {
-                    doc.fontSize(10)
-                        .font('Helvetica')
-                        .fillColor('#333333')
-                        .text(line, { width: 500 });
-                    doc.moveDown(0.5); // Extra space after summary
-
-                    // Company with location and dates on same line - improved date detection
-                } else if (line.includes('Seattle, WA') || line.includes('Tokyo, Japan') || line.includes('Evanston, IL') ||
-                    (line.includes('|') && (line.includes('202') || line.includes('201') || line.includes('/20') || line.includes('- 20')))) {
-                    // Parse company, location, title, dates
-                    const parts = line.split('|').map(p => p.trim());
-                    if (parts.length >= 3) {
-                        // Company and location
-                        doc.fontSize(11)
-                            .font('Helvetica-Bold')
-                            .fillColor('#000000')
-                            .text(parts[0], { continued: true })
-                            .font('Helvetica')
-                            .text(' | ' + parts[1], { continued: true })
-                            .text(' | ' + parts[2]);
-                    } else {
-                        doc.fontSize(11)
-                            .font('Helvetica-Bold')
-                            .fillColor('#000000')
-                            .text(line);
+                    // Check if we need a new page
+                    if (doc.y > 720) {
+                        doc.addPage();
                     }
-                    doc.moveDown(0.2);
 
-                    // Job titles (without company info)
-                } else if (line.includes('Engineering Manager') || line.includes('Software Development Manager') ||
-                    line.includes('Manager,') ||
-                    (i > 0 && lines[i-1].includes('Seattle, WA') && !line.startsWith('•'))) {
-                    doc.fontSize(11)
-                        .font('Helvetica-Bold')
-                        .fillColor('#333333')
-                        .text(line);
-                    doc.moveDown(0.2);
-
-                    // Company descriptions (any longer paragraph after job title)
-                } else if (line.length > 80 && !line.startsWith('•') && !line.startsWith('*') &&
-                    i > 0 && (lines[i-1].includes('Engineering Manager') || lines[i-1].includes('Software Development Manager') ||
-                        lines[i-1].includes('Manager,') || lines[i-1].includes('Seattle, WA') || lines[i-1].includes('Tokyo, Japan'))) {
-                    doc.fontSize(10)
-                        .font('Helvetica')
-                        .fillColor('#555555')
-                        .text(line, { width: 500 });
-                    doc.moveDown(0.3);
-
-                    // Work experience items - convert to bullets if not already
-                } else if ((lines[i-1] && (lines[i-1].includes('Engineering Manager') || lines[i-1].includes('Software Development Manager'))) ||
-                    (line.length > 30 && !line.startsWith('•') && !line.startsWith('*') &&
-                        (line.includes('Led') || line.includes('Managed') || line.includes('Developed') ||
-                            line.includes('Implemented') || line.includes('Founded') || line.includes('Delivered') ||
-                            line.includes('Spearheaded') || line.includes('Defined') || line.includes('Architected') ||
-                            line.includes('Established') || line.includes('Transformed') || line.includes('Authored')))) {
-                    doc.fontSize(10)
-                        .font('Helvetica')
-                        .fillColor('#333333')
-                        .text('• ' + line, {
-                            indent: 20,
-                            width: 500,
-                            lineGap: 2
-                        });
-                    doc.moveDown(0.1);
-
-                    // Bullet points
-                } else if (line.startsWith('•') || line.startsWith('*')) {
-                    const bulletText = line.replace(/^[•*]\s*/, '');
-                    doc.fontSize(10)
-                        .font('Helvetica')
-                        .fillColor('#333333')
-                        .text('• ' + bulletText, {
-                            indent: 20,
-                            width: 500,
-                            lineGap: 2
-                        });
-                    doc.moveDown(0.1);
-
-                    // Education entries
-                } else if (line.includes('University') || line.includes('MIT') || line.includes('Bachelor') || line.includes('Massachusetts')) {
-                    doc.fontSize(11)
-                        .font('Helvetica-Bold')
-                        .fillColor('#000000')
-                        .text(line);
-                    doc.moveDown(0.2);
-
-                    // Regular text/certifications
-                } else {
-                    doc.fontSize(10)
-                        .font('Helvetica')
-                        .fillColor('#333333')
-                        .text(line, { width: 500 });
-                    doc.moveDown(0.15);
+                    // Process each marker type
+                    if (trimmed.match(/^\*{0,2}NAME:/)) {
+                        const text = trimmed.replace(/^\*{0,2}NAME:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(18)
+                                .font('Helvetica-Bold')
+                                .fillColor('#2c5aa0')
+                                .text(text, { align: 'left' });
+                            doc.moveDown(0.3);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}CONTACT:/)) {
+                        const text = trimmed.replace(/^\*{0,2}CONTACT:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(10)
+                                .font('Helvetica')
+                                .fillColor('#555555')
+                                .text(text);
+                            doc.moveDown(0.5);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}SECTION:/)) {
+                        const text = trimmed.replace(/^\*{0,2}SECTION:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(12)
+                                .font('Helvetica-Bold')
+                                .fillColor('#2c5aa0')
+                                .text(text.toUpperCase());
+                            doc.moveDown(0.3);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}SUMMARY_TEXT:/)) {
+                        const text = trimmed.replace(/^\*{0,2}SUMMARY_TEXT:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(10)
+                                .font('Helvetica')
+                                .fillColor('#333333')
+                                .text(text, { width: 500 });
+                            doc.moveDown(0.5);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}COMPANY:/)) {
+                        const text = trimmed.replace(/^\*{0,2}COMPANY:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(11)
+                                .font('Helvetica-Bold')
+                                .fillColor('#000000')
+                                .text(text);
+                            doc.moveDown(0.2);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}TITLE:/)) {
+                        const text = trimmed.replace(/^\*{0,2}TITLE:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(11)
+                                .font('Helvetica-Bold')
+                                .fillColor('#333333')
+                                .text(text);
+                            doc.moveDown(0.2);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}DESC:/)) {
+                        const text = trimmed.replace(/^\*{0,2}DESC:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(10)
+                                .font('Helvetica')
+                                .fillColor('#555555')
+                                .text(text, { width: 500 });
+                            doc.moveDown(0.3);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}BULLET:/)) {
+                        const text = trimmed.replace(/^\*{0,2}BULLET:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(10)
+                                .font('Helvetica')
+                                .fillColor('#333333')
+                                .text(text, {
+                                    indent: 20,
+                                    width: 500,
+                                    lineGap: 2
+                                });
+                            doc.moveDown(0.1);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}EDUCATION:/)) {
+                        const text = trimmed.replace(/^\*{0,2}EDUCATION:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(11)
+                                .font('Helvetica-Bold')
+                                .fillColor('#000000')
+                                .text(text);
+                            doc.moveDown(0.2);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}SKILL_CATEGORY:/)) {
+                        const text = trimmed.replace(/^\*{0,2}SKILL_CATEGORY:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(10)
+                                .font('Helvetica')
+                                .fillColor('#333333')
+                                .text(text, { width: 500 });
+                            doc.moveDown(0.15);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}SPACE\*{0,2}$/)) {
+                        doc.moveDown(0.4);
+                    }
+                    // Cover letter markers
+                    else if (trimmed.match(/^\*{0,2}HEADER:/)) {
+                        const text = trimmed.replace(/^\*{0,2}HEADER:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(14)
+                                .font('Helvetica-Bold')
+                                .text(text);
+                            doc.moveDown(0.5);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}ADDRESS:/)) {
+                        const text = trimmed.replace(/^\*{0,2}ADDRESS:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(10)
+                                .font('Helvetica')
+                                .text(text);
+                            doc.moveDown(0.3);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}DATE:/)) {
+                        const text = trimmed.replace(/^\*{0,2}DATE:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(10)
+                                .font('Helvetica')
+                                .text(text);
+                            doc.moveDown(0.5);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}EMPLOYER:/)) {
+                        const text = trimmed.replace(/^\*{0,2}EMPLOYER:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(10)
+                                .font('Helvetica')
+                                .text(text);
+                            doc.moveDown(0.3);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}SUBJECT:/)) {
+                        const text = trimmed.replace(/^\*{0,2}SUBJECT:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(11)
+                                .font('Helvetica-Bold')
+                                .text(text);
+                            doc.moveDown(0.5);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}BODY_PARAGRAPH:/)) {
+                        const text = trimmed.replace(/^\*{0,2}BODY_PARAGRAPH:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(10)
+                                .font('Helvetica')
+                                .text(text, { width: 500 });
+                            doc.moveDown(0.5);
+                        }
+                    }
+                    else if (trimmed.match(/^\*{0,2}CLOSING:/)) {
+                        const text = trimmed.replace(/^\*{0,2}CLOSING:\s*\*{0,2}/, '').trim();
+                        if (text) {
+                            doc.fontSize(10)
+                                .font('Helvetica')
+                                .text(text);
+                            doc.moveDown(0.3);
+                        }
+                    }
                 }
+            } else {
+                // Fallback to original PDF generation for unstructured content
+                const cleanContent = cleanAIResponse(content)
+                    .replace(/\*\*/g, '')
+                    .replace(/\*/g, '')
+                    .replace(/_{2,}/g, '')
+                    .replace(/^_+|_+$/gm, '')
+                    .replace(/^#+\s*/gm, '')
+                    .replace(/`{1,3}/g, '')
+                    .trim();
 
-                // Add extra space after company sections
-                if (line.includes('Amazon Japan') || line.includes('Tokyo, Japan')) {
-                    doc.moveDown(0.4);
+                const cleanLines = cleanContent.split('\n').filter(line => line.trim());
+
+                for (let i = 0; i < cleanLines.length; i++) {
+                    const line = cleanLines[i].trim();
+                    if (!line) continue;
+
+                    // Basic formatting for unstructured content
+                    doc.fontSize(10)
+                        .font('Helvetica')
+                        .fillColor('#333333')
+                        .text(line, { width: 500 });
+                    doc.moveDown(0.2);
                 }
             }
 
@@ -633,9 +702,52 @@ async function parseResumeFile(fileBuffer) {
 
 async function customizeWithOpenAI(resumeText, jobDescription, apiKey, type) {
     const prompts = {
-        resume: `Customize this resume for the job posting. Focus on relevant skills and keywords from the job description. Keep the same general format but optimize content for this specific role. Return ONLY the customized resume content without any commentary or explanation.\n\nOriginal Resume:\n${resumeText}\n\nJob Description:\n${jobDescription}\n\nCustomized Resume:`,
-        cover_letter: `Write a professional cover letter based on this resume and job description. Return ONLY the cover letter content without any commentary.\n\nResume:\n${resumeText}\n\nJob Description:\n${jobDescription}\n\nCover Letter:`,
-        changes: `Compare the original resume with the job requirements and list the key optimizations made. Be specific about keyword additions, rephrasing, and emphasis changes. Format as a bulleted list.\n\nOriginal Resume:\n${resumeText}\n\nJob Requirements:\n${jobDescription}\n\nKey Changes Made:`
+        resume: `Transform this resume for the job posting using this EXACT format. Each line must start with one of these markers:
+
+NAME: [Full Name]
+CONTACT: [Email | Phone | LinkedIn | Location]
+SECTION: [SECTION NAME]
+SUMMARY_TEXT: [Professional summary]
+COMPANY: [Company Name] | [Location] | [Dates]
+TITLE: [Job Title]
+DESC: [Company description - only for non-major companies]
+BULLET: • [Achievement/responsibility]
+EDUCATION: [Degree] | [Institution] | [Location] | [Year]
+SKILL_CATEGORY: [Category]: [skills]
+SPACE (for visual breaks)
+
+Keep ALL experiences and achievements. Only optimize wording and keywords.
+
+Original Resume:
+${resumeText}
+
+Job Description:
+${jobDescription}
+
+Output:`,
+        cover_letter: `Write a professional cover letter using these format markers:
+
+HEADER: [Your Name]
+ADDRESS: [Your contact info]
+DATE: [Current date]
+EMPLOYER: [Hiring Manager / Company]
+SUBJECT: Application for [Position Title]
+BODY_PARAGRAPH: [Paragraph content]
+CLOSING: [Professional closing]
+
+Resume: ${resumeText}
+Job: ${jobDescription}
+
+Output:`,
+        changes: `List key optimizations made. Format as bulleted list.
+
+Original Resume:
+${resumeText}
+
+Job Requirements:
+${jobDescription}
+
+Key Changes Made:`
     };
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -792,13 +904,52 @@ ${jobDescription}
 
 async function customizeWithClaude(resumeText, jobDescription, apiKey, type) {
     const prompts = {
-        resume: `Customize this resume for the job. Focus on relevant skills and keywords. IMPORTANT: Keep ALL work experience, achievements, and dates. Do not remove or summarize any job experiences - preserve all bullet points and accomplishments. Only optimize wording and emphasize relevant skills.
+        resume: `Transform this resume for the job using this EXACT format:
 
-For companies that are not widely known (like startups or smaller companies), include a brief 1-2 line company description. Skip descriptions for well-known companies like Amazon, Google, Microsoft, Meta, etc.
+NAME: [Full Name]
+CONTACT: [Email | Phone | LinkedIn | Location]
+SECTION: [SECTION NAME]
+SUMMARY_TEXT: [Professional summary]
+COMPANY: [Company Name] | [Location] | [Dates]
+TITLE: [Job Title]
+DESC: [Company description - only for non-major companies]
+BULLET: • [Achievement/responsibility]
+EDUCATION: [Degree] | [Institution] | [Location] | [Year]
+SKILL_CATEGORY: [Category]: [skills]
+SPACE (for visual breaks)
 
-Resume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
-        cover_letter: `Write a professional cover letter based on this resume and job description.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`,
-        changes: `Compare the original resume with the job requirements and list the key optimizations made. Be specific about keyword additions, rephrasing, and emphasis changes. Format as a bulleted list.\n\nOriginal Resume:\n${resumeText}\n\nJob Requirements:\n${jobDescription}\n\nKey Changes Made:`
+Keep ALL experiences. Only optimize wording and keywords.
+
+Resume:
+${resumeText}
+
+Job:
+${jobDescription}
+
+Output:`,
+        cover_letter: `Write a professional cover letter using these markers:
+
+HEADER: [Your Name]
+ADDRESS: [Your contact info]
+DATE: [Current date]
+EMPLOYER: [Hiring Manager / Company]
+SUBJECT: Application for [Position Title]
+BODY_PARAGRAPH: [Paragraph content]
+CLOSING: [Professional closing]
+
+Resume: ${resumeText}
+Job: ${jobDescription}
+
+Output:`,
+        changes: `List key optimizations as bullets.
+
+Original Resume:
+${resumeText}
+
+Job Requirements:
+${jobDescription}
+
+Key Changes Made:`
     };
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
