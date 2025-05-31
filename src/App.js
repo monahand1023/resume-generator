@@ -505,32 +505,62 @@ function App() {
                     </div>
                 </div>
 
-                {/* Results Section */}
+                {/* Download Section - Now above changes */}
+                {(results.openai || results.gemini || results.claude) && (
+                    <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
+                        <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Download Your Documents</h2>
+                        <div className="space-y-6">
+                            {results.openai && (
+                                <DownloadSection
+                                    title="OpenAI Results"
+                                    results={results.openai}
+                                    downloadFile={downloadFile}
+                                    color="green"
+                                />
+                            )}
+                            {results.gemini && (
+                                <DownloadSection
+                                    title="Gemini Results"
+                                    results={results.gemini}
+                                    downloadFile={downloadFile}
+                                    color="blue"
+                                />
+                            )}
+                            {results.claude && (
+                                <DownloadSection
+                                    title="Claude Results"
+                                    results={results.claude}
+                                    downloadFile={downloadFile}
+                                    color="purple"
+                                />
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Changes Analysis Section */}
                 {(results.openai || results.gemini || results.claude) && (
                     <div className="space-y-8">
                         {results.openai && (
-                            <ResultsSection
-                                title="OpenAI Results"
+                            <ChangesSection
+                                title="OpenAI Analysis"
                                 results={results.openai}
-                                downloadFile={downloadFile}
                                 parseChangesData={parseChangesData}
                                 color="green"
                             />
                         )}
                         {results.gemini && (
-                            <ResultsSection
-                                title="Gemini Results"
+                            <ChangesSection
+                                title="Gemini Analysis"
                                 results={results.gemini}
-                                downloadFile={downloadFile}
                                 parseChangesData={parseChangesData}
                                 color="blue"
                             />
                         )}
                         {results.claude && (
-                            <ResultsSection
-                                title="Claude Results"
+                            <ChangesSection
+                                title="Claude Analysis"
                                 results={results.claude}
-                                downloadFile={downloadFile}
                                 parseChangesData={parseChangesData}
                                 color="purple"
                             />
@@ -542,22 +572,72 @@ function App() {
     );
 }
 
-function ResultsSection({ title, results, downloadFile, parseChangesData, color }) {
+function DownloadSection({ title, results, downloadFile, color }) {
     const colorClasses = {
         green: {
-            header: 'bg-green-50 border-green-200',
+            border: 'border-green-200',
             title: 'text-green-800',
             button: 'bg-green-600 hover:bg-green-700'
         },
         blue: {
-            header: 'bg-blue-50 border-blue-200',
+            border: 'border-blue-200',
             title: 'text-blue-800',
             button: 'bg-blue-600 hover:bg-blue-700'
         },
         purple: {
-            header: 'bg-purple-50 border-purple-200',
+            border: 'border-purple-200',
             title: 'text-purple-800',
             button: 'bg-purple-600 hover:bg-purple-700'
+        }
+    };
+
+    const classes = colorClasses[color];
+
+    return (
+        <div className={`border-l-4 ${classes.border} pl-6`}>
+            <h3 className={`text-lg font-semibold ${classes.title} mb-3`}>{title}</h3>
+            {results.metadata && (
+                <p className="text-sm text-gray-600 mb-4">
+                    {results.metadata.name} • {results.metadata.company} • {results.metadata.position}
+                </p>
+            )}
+            <div className="grid md:grid-cols-2 gap-4">
+                <DocumentCard
+                    title="Customized Resume"
+                    icon={<FileText className="w-5 h-5 mr-2" />}
+                    content={results.resume}
+                    filename="resume"
+                    downloadFile={downloadFile}
+                    buttonClass={classes.button}
+                    metadata={results.metadata}
+                />
+                <DocumentCard
+                    title="Cover Letter"
+                    icon={<Mail className="w-5 h-5 mr-2" />}
+                    content={results.coverLetter}
+                    filename="cover_letter"
+                    downloadFile={downloadFile}
+                    buttonClass={classes.button}
+                    metadata={results.metadata}
+                />
+            </div>
+        </div>
+    );
+}
+
+function ChangesSection({ title, results, parseChangesData, color }) {
+    const colorClasses = {
+        green: {
+            header: 'bg-green-50 border-green-200',
+            title: 'text-green-800'
+        },
+        blue: {
+            header: 'bg-blue-50 border-blue-200',
+            title: 'text-blue-800'
+        },
+        purple: {
+            header: 'bg-purple-50 border-purple-200',
+            title: 'text-purple-800'
         }
     };
 
@@ -630,28 +710,6 @@ function ResultsSection({ title, results, downloadFile, parseChangesData, color 
                     )}
                 </div>
             )}
-
-            <div className="grid md:grid-cols-2 gap-6 p-6 bg-white">
-                <DocumentCard
-                    title="Customized Resume"
-                    icon={<FileText className="w-5 h-5 mr-2" />}
-                    content={results.resume}
-                    filename="resume"
-                    downloadFile={downloadFile}
-                    buttonClass={classes.button}
-                    metadata={results.metadata}
-                />
-
-                <DocumentCard
-                    title="Cover Letter"
-                    icon={<Mail className="w-5 h-5 mr-2" />}
-                    content={results.coverLetter}
-                    filename="cover_letter"
-                    downloadFile={downloadFile}
-                    buttonClass={classes.button}
-                    metadata={results.metadata}
-                />
-            </div>
         </div>
     );
 }

@@ -272,15 +272,15 @@ function createStyledPDF(content, name, company, position) {
                     else if (trimmed.match(/^\*{0,2}SPACE\*{0,2}$/)) {
                         doc.moveDown(0.4);
                     }
-                    // COVER LETTER MARKERS - PROPERLY FORMATTED
+                    // COVER LETTER MARKERS - ENHANCED FORMATTING
                     else if (trimmed.match(/^\*{0,2}HEADER:/)) {
                         const text = trimmed.replace(/^\*{0,2}HEADER:\s*\*{0,2}/, '').trim();
                         if (text) {
-                            doc.fontSize(16)
+                            doc.fontSize(20)
                                 .font('Helvetica-Bold')
-                                .fillColor('#000000')
-                                .text(text, { align: 'left' });
-                            doc.moveDown(0.3);
+                                .fillColor('#1e40af') // Professional blue
+                                .text(text, { align: 'center' });
+                            doc.moveDown(0.4);
                         }
                     }
                     else if (trimmed.match(/^\*{0,2}ADDRESS:/)) {
@@ -288,64 +288,64 @@ function createStyledPDF(content, name, company, position) {
                         if (text) {
                             doc.fontSize(10)
                                 .font('Helvetica')
-                                .fillColor('#555555')
-                                .text(text, { align: 'left' });
-                            doc.moveDown(0.2);
+                                .fillColor('#6b7280') // Subtle gray
+                                .text(text, { align: 'center' });
+                            doc.moveDown(0.3);
                         }
                     }
                     else if (trimmed.match(/^\*{0,2}DATE:/)) {
                         const text = trimmed.replace(/^\*{0,2}DATE:\s*\*{0,2}/, '').trim();
                         if (text) {
-                            doc.moveDown(0.5);
+                            doc.moveDown(0.6);
                             doc.fontSize(10)
                                 .font('Helvetica')
-                                .fillColor('#000000')
-                                .text(text);
-                            doc.moveDown(0.5);
+                                .fillColor('#374151') // Dark gray
+                                .text(text, { align: 'left' });
+                            doc.moveDown(0.6);
                         }
                     }
                     else if (trimmed.match(/^\*{0,2}EMPLOYER:/)) {
                         const text = trimmed.replace(/^\*{0,2}EMPLOYER:\s*\*{0,2}/, '').trim();
                         if (text && text !== 'N/A') {
                             doc.fontSize(10)
-                                .font('Helvetica')
-                                .fillColor('#000000')
-                                .text(text);
+                                .font('Helvetica-Bold')
+                                .fillColor('#1f2937') // Almost black
+                                .text(text, { align: 'left' });
                             doc.moveDown(0.1);
                         }
                     }
                     else if (trimmed.match(/^\*{0,2}SUBJECT:/)) {
                         const text = trimmed.replace(/^\*{0,2}SUBJECT:\s*\*{0,2}/, '').trim();
                         if (text) {
-                            doc.moveDown(0.3);
-                            doc.fontSize(10)
-                                .font('Helvetica')
-                                .fillColor('#000000')
-                                .text(text);
-                            doc.moveDown(0.5);
+                            doc.moveDown(0.4);
+                            doc.fontSize(11)
+                                .font('Helvetica-Bold')
+                                .fillColor('#1e40af') // Professional blue
+                                .text(text, { align: 'left' });
+                            doc.moveDown(0.6);
                         }
                     }
                     else if (trimmed.match(/^\*{0,2}BODY_PARAGRAPH:/)) {
                         const text = trimmed.replace(/^\*{0,2}BODY_PARAGRAPH:\s*\*{0,2}/, '').trim();
                         if (text) {
-                            doc.fontSize(10)
+                            doc.fontSize(11)
                                 .font('Helvetica')
-                                .fillColor('#000000')
+                                .fillColor('#1f2937') // Almost black
                                 .text(text, {
                                     width: 500,
-                                    align: 'left',
-                                    lineGap: 2
+                                    align: 'justify',
+                                    lineGap: 3
                                 });
-                            doc.moveDown(0.5);
+                            doc.moveDown(0.6);
                         }
                     }
                     else if (trimmed.match(/^\*{0,2}CLOSING:/)) {
                         const text = trimmed.replace(/^\*{0,2}CLOSING:\s*\*{0,2}/, '').trim();
                         if (text) {
-                            doc.fontSize(10)
+                            doc.fontSize(11)
                                 .font('Helvetica')
-                                .fillColor('#000000')
-                                .text(text);
+                                .fillColor('#1f2937') // Almost black
+                                .text(text, { align: 'left' });
                             doc.moveDown(0.2);
                         }
                     }
@@ -539,7 +539,7 @@ async function createWordDoc(content, title) {
                     }));
                 }
             }
-            // COVER LETTER MARKERS - PROPERLY FORMATTED
+            // COVER LETTER MARKERS - ENHANCED FORMATTING
             else if (trimmed.match(/^\*{0,2}HEADER:/)) {
                 const text = trimmed.replace(/^\*{0,2}HEADER:\s*\*{0,2}/, '').trim();
                 if (text) {
@@ -547,10 +547,11 @@ async function createWordDoc(content, title) {
                         children: [new TextRun({
                             text: text,
                             bold: true,
-                            size: 32,
-                            color: "000000"
+                            size: 40,
+                            color: "1e40af" // Professional blue
                         })],
-                        spacing: { after: 200 }
+                        spacing: { after: 240 },
+                        alignment: "center"
                     }));
                 }
             }
@@ -561,9 +562,10 @@ async function createWordDoc(content, title) {
                         children: [new TextRun({
                             text: text,
                             size: 20,
-                            color: "555555"
+                            color: "6b7280" // Subtle gray
                         })],
-                        spacing: { after: 100 }
+                        spacing: { after: 180 },
+                        alignment: "center"
                     }));
                 }
             }
@@ -575,15 +577,15 @@ async function createWordDoc(content, title) {
                             text: "",
                             size: 20
                         })],
-                        spacing: { after: 200 }
+                        spacing: { after: 240 }
                     }));
                     children.push(new Paragraph({
                         children: [new TextRun({
                             text: text,
                             size: 20,
-                            color: "000000"
+                            color: "374151" // Dark gray
                         })],
-                        spacing: { after: 300 }
+                        spacing: { after: 360 }
                     }));
                 }
             }
@@ -593,10 +595,11 @@ async function createWordDoc(content, title) {
                     children.push(new Paragraph({
                         children: [new TextRun({
                             text: text,
+                            bold: true,
                             size: 20,
-                            color: "000000"
+                            color: "1f2937" // Almost black
                         })],
-                        spacing: { after: 50 }
+                        spacing: { after: 60 }
                     }));
                 }
             }
@@ -608,15 +611,16 @@ async function createWordDoc(content, title) {
                             text: "",
                             size: 20
                         })],
-                        spacing: { after: 100 }
+                        spacing: { after: 240 }
                     }));
                     children.push(new Paragraph({
                         children: [new TextRun({
                             text: text,
-                            size: 20,
-                            color: "000000"
+                            bold: true,
+                            size: 22,
+                            color: "1e40af" // Professional blue
                         })],
-                        spacing: { after: 300 }
+                        spacing: { after: 360 }
                     }));
                 }
             }
@@ -626,11 +630,11 @@ async function createWordDoc(content, title) {
                     children.push(new Paragraph({
                         children: [new TextRun({
                             text: text,
-                            size: 20,
-                            color: "000000"
+                            size: 22,
+                            color: "1f2937" // Almost black
                         })],
-                        spacing: { after: 300 },
-                        alignment: "left"
+                        spacing: { after: 360, line: 276 }, // Better line spacing
+                        alignment: "both" // Justified
                     }));
                 }
             }
@@ -640,10 +644,10 @@ async function createWordDoc(content, title) {
                     children.push(new Paragraph({
                         children: [new TextRun({
                             text: text,
-                            size: 20,
-                            color: "000000"
+                            size: 22,
+                            color: "1f2937" // Almost black
                         })],
-                        spacing: { after: 100 }
+                        spacing: { after: 120 }
                     }));
                 }
             }
