@@ -1,0 +1,28 @@
+# netlify.toml (create this in your project root)
+[build]
+# Build command for React app
+command = "npm run build"
+# Directory to publish (React build output)
+publish = "build"
+
+[build.environment]
+# Node version for build
+NODE_VERSION = "18"
+
+# Redirect API calls to your current backend
+# This allows the frontend to work while your backend stays the same
+[[redirects]]
+from = "/api/*"
+to = "http://localhost:3000/api/:splat"
+status = 200
+# Note: You'll need to update this to your actual backend URL once deployed
+
+# Handle React Router (if you add routing later)
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
+
+[functions]
+# For future serverless functions (not needed yet)
+directory = "netlify/functions"
