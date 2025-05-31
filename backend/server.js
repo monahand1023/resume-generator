@@ -267,7 +267,7 @@ function createStyledPDF(content, name, company, position) {
                         if (text) {
                             doc.fontSize(14)
                                 .font('Helvetica-Bold')
-                                .text(text);
+                                .text(text, { align: 'center' });
                             doc.moveDown(0.5);
                         }
                     }
@@ -276,7 +276,7 @@ function createStyledPDF(content, name, company, position) {
                         if (text) {
                             doc.fontSize(10)
                                 .font('Helvetica')
-                                .text(text);
+                                .text(text, { align: 'center' });
                             doc.moveDown(0.3);
                         }
                     }
@@ -295,7 +295,7 @@ function createStyledPDF(content, name, company, position) {
                             doc.fontSize(10)
                                 .font('Helvetica')
                                 .text(text);
-                            doc.moveDown(0.3);
+                            doc.moveDown(0.1);
                         }
                     }
                     else if (trimmed.match(/^\*{0,2}SUBJECT:/)) {
@@ -312,7 +312,7 @@ function createStyledPDF(content, name, company, position) {
                         if (text) {
                             doc.fontSize(10)
                                 .font('Helvetica')
-                                .text(text, { width: 500 });
+                                .text(text, { width: 500, align: 'justify' });
                             doc.moveDown(0.5);
                         }
                     }
@@ -727,13 +727,24 @@ ${jobDescription}
 Output:`,
         cover_letter: `Write a professional cover letter using these format markers:
 
-HEADER: [Your Name]
-ADDRESS: [Your contact info]
-DATE: [Current date]
-EMPLOYER: [Hiring Manager / Company]
-SUBJECT: Application for [Position Title]
-BODY_PARAGRAPH: [Paragraph content]
-CLOSING: [Professional closing]
+HEADER: [Full Name]
+ADDRESS: [Email | Phone | City, State]
+DATE: [Today's date]
+EMPLOYER: [Hiring Manager Name or "Hiring Manager"]
+EMPLOYER: [Company Name]
+EMPLOYER: [Company Address if known]
+SUBJECT: Re: [Position Title] Position
+
+BODY_PARAGRAPH: [Opening paragraph - express interest and how you learned about the position]
+
+BODY_PARAGRAPH: [Second paragraph - highlight relevant experience and achievements from resume that match job requirements]
+
+BODY_PARAGRAPH: [Third paragraph - explain why you're interested in this company/role specifically]
+
+BODY_PARAGRAPH: [Closing paragraph - reiterate interest and mention next steps]
+
+CLOSING: Sincerely,
+CLOSING: [Your Name]
 
 Resume: ${resumeText}
 Job: ${jobDescription}
@@ -815,13 +826,24 @@ ${jobDescription}
         // Your cover_letter and changes prompts remain the same as you had them
         cover_letter: `Write a professional cover letter. Use these format markers:
 
-**HEADER:** [Your Name]
-**ADDRESS:** [Your contact info]
-**DATE:** [Current date]
-**EMPLOYER:** [Hiring Manager / Company]
-**SUBJECT:** Application for [Position Title]
-**BODY_PARAGRAPH:** [Paragraph content] (Use for each paragraph)
-**CLOSING:** [Professional closing]
+**HEADER:** [Full Name]
+**ADDRESS:** [Email | Phone | City, State]
+**DATE:** [Today's date]
+**EMPLOYER:** [Hiring Manager Name or "Hiring Manager"]
+**EMPLOYER:** [Company Name]
+**EMPLOYER:** [Company Address if known]
+**SUBJECT:** Re: [Position Title] Position
+
+**BODY_PARAGRAPH:** [Opening paragraph - express interest and how you learned about the position]
+
+**BODY_PARAGRAPH:** [Second paragraph - highlight relevant experience and achievements from resume that match job requirements]
+
+**BODY_PARAGRAPH:** [Third paragraph - explain why you're interested in this company/role specifically]
+
+**BODY_PARAGRAPH:** [Closing paragraph - reiterate interest and mention next steps]
+
+**CLOSING:** Sincerely,
+**CLOSING:** [Your Name]
 
 Resume: ${resumeText}
 Job: ${jobDescription}
@@ -929,13 +951,24 @@ ${jobDescription}
 Output:`,
         cover_letter: `Write a professional cover letter using these markers:
 
-HEADER: [Your Name]
-ADDRESS: [Your contact info]
-DATE: [Current date]
-EMPLOYER: [Hiring Manager / Company]
-SUBJECT: Application for [Position Title]
-BODY_PARAGRAPH: [Paragraph content]
-CLOSING: [Professional closing]
+HEADER: [Full Name]
+ADDRESS: [Email | Phone | City, State]
+DATE: [Today's date]
+EMPLOYER: [Hiring Manager Name or "Hiring Manager"]
+EMPLOYER: [Company Name]
+EMPLOYER: [Company Address if known]
+SUBJECT: Re: [Position Title] Position
+
+BODY_PARAGRAPH: [Opening paragraph - express interest and how you learned about the position]
+
+BODY_PARAGRAPH: [Second paragraph - highlight relevant experience and achievements from resume that match job requirements]
+
+BODY_PARAGRAPH: [Third paragraph - explain why you're interested in this company/role specifically]
+
+BODY_PARAGRAPH: [Closing paragraph - reiterate interest and mention next steps]
+
+CLOSING: Sincerely,
+CLOSING: [Your Name]
 
 Resume: ${resumeText}
 Job: ${jobDescription}
@@ -978,7 +1011,8 @@ Key Changes Made:`
 }
 
 function createPDF(content, title) {
-    return createStyledPDF(content, title, '', '');
+    // Just use the same marker-aware function
+    return createStyledPDF(content, '', '', '');
 }
 
 app.post('/api/customize-resume', upload.single('resume'), async (req, res) => {
