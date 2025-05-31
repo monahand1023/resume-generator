@@ -290,6 +290,306 @@ function createStyledPDF(content, name, company, position) {
     });
 }
 
+async function createWordDoc(content, title) {
+    const lines = content.split('\n');
+    const children = [];
+
+    // Check if content uses marker format
+    const hasMarkers = lines.some(line =>
+        line.includes('NAME:') || line.includes('SECTION:') ||
+        line.includes('COMPANY:') || line.includes('TITLE:') ||
+        line.includes('BULLET:') || line.includes('EDUCATION:')
+    );
+
+    if (hasMarkers) {
+        // Process Gemini's marker-based format
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            // Process each marker type
+            if (trimmed.match(/^\*{0,2}NAME:/)) {
+                const text = trimmed.replace(/^\*{0,2}NAME:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 36,
+                            color: "2c5aa0"
+                        })],
+                        spacing: { after: 200 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}CONTACT:/)) {
+                const text = trimmed.replace(/^\*{0,2}CONTACT:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20,
+                            color: "555555"
+                        })],
+                        spacing: { after: 300 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}SECTION:/)) {
+                const text = trimmed.replace(/^\*{0,2}SECTION:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 24,
+                            color: "2c5aa0"
+                        })],
+                        spacing: { before: 200, after: 200 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}SUMMARY_TEXT:/)) {
+                const text = trimmed.replace(/^\*{0,2}SUMMARY_TEXT:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20,
+                            color: "333333"
+                        })],
+                        spacing: { after: 200 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}COMPANY:/)) {
+                const text = trimmed.replace(/^\*{0,2}COMPANY:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 22,
+                            color: "000000"
+                        })],
+                        spacing: { before: 200, after: 100 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}TITLE:/)) {
+                const text = trimmed.replace(/^\*{0,2}TITLE:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 20,
+                            color: "333333"
+                        })],
+                        spacing: { after: 100 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}DESC:/)) {
+                const text = trimmed.replace(/^\*{0,2}DESC:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 18,
+                            color: "555555",
+                            italics: true
+                        })],
+                        spacing: { after: 150 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}BULLET:/)) {
+                const text = trimmed.replace(/^\*{0,2}BULLET:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20,
+                            color: "333333"
+                        })],
+                        indent: { left: 200 },
+                        spacing: { after: 100 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}EDUCATION:/)) {
+                const text = trimmed.replace(/^\*{0,2}EDUCATION:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 20,
+                            color: "000000"
+                        })],
+                        spacing: { after: 100 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}SKILL_CATEGORY:/)) {
+                const text = trimmed.replace(/^\*{0,2}SKILL_CATEGORY:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20,
+                            color: "333333"
+                        })],
+                        spacing: { after: 100 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}HEADER:/)) {
+                const text = trimmed.replace(/^\*{0,2}HEADER:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 24
+                        })],
+                        spacing: { after: 100 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}ADDRESS:/)) {
+                const text = trimmed.replace(/^\*{0,2}ADDRESS:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20
+                        })],
+                        spacing: { after: 200 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}DATE:/)) {
+                const text = trimmed.replace(/^\*{0,2}DATE:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20
+                        })],
+                        spacing: { after: 200 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}EMPLOYER:/)) {
+                const text = trimmed.replace(/^\*{0,2}EMPLOYER:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20
+                        })],
+                        spacing: { after: 100 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}SUBJECT:/)) {
+                const text = trimmed.replace(/^\*{0,2}SUBJECT:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 22
+                        })],
+                        spacing: { after: 200 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}BODY_PARAGRAPH:/)) {
+                const text = trimmed.replace(/^\*{0,2}BODY_PARAGRAPH:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20
+                        })],
+                        spacing: { after: 200 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}CLOSING:/)) {
+                const text = trimmed.replace(/^\*{0,2}CLOSING:\s*\*{0,2}/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20
+                        })],
+                        spacing: { after: 100 }
+                    }));
+                }
+            }
+            else if (trimmed.match(/^\*{0,2}SPACE\*{0,2}$/)) {
+                children.push(new Paragraph({
+                    children: [new TextRun({ text: "" })],
+                    spacing: { after: 300 }
+                }));
+            }
+            // Any line that doesn't start with a known marker
+            else if (!trimmed.match(/^(\*{0,2})(NAME|CONTACT|SECTION|SUMMARY_TEXT|COMPANY|TITLE|DESC|BULLET|EDUCATION|SKILL_CATEGORY|HEADER|ADDRESS|DATE|EMPLOYER|SUBJECT|BODY_PARAGRAPH|CLOSING|SPACE):/)) {
+                children.push(new Paragraph({
+                    children: [new TextRun({
+                        text: trimmed,
+                        size: 20,
+                        color: "333333"
+                    })],
+                    spacing: { after: 100 }
+                }));
+            }
+        }
+    } else {
+        // Process unstructured content from OpenAI/Claude
+        const paragraphs = content.split('\n\n');
+
+        for (const paragraph of paragraphs) {
+            const trimmed = paragraph.trim();
+            if (!trimmed) continue;
+
+            // Clean up any formatting artifacts
+            const cleanText = trimmed
+                .replace(/\*\*/g, '')
+                .replace(/\*/g, '')
+                .replace(/_{2,}/g, '')
+                .replace(/^_+|_+$/gm, '')
+                .replace(/^#+\s*/gm, '')
+                .replace(/`{1,3}/g, '');
+
+            children.push(new Paragraph({
+                children: [new TextRun({
+                    text: cleanText,
+                    size: 20
+                })],
+                spacing: { after: 200 }
+            }));
+        }
+    }
+
+    const doc = new Document({
+        sections: [{
+            properties: {
+                page: {
+                    margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 }
+                }
+            },
+            children: children
+        }]
+    });
+
+    return await Packer.toBuffer(doc);
+}
+
 async function scrapeJobDescription(url) {
     const browser = await puppeteer.launch({
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
@@ -439,7 +739,7 @@ ${jobDescription}
             }]
         }],
         generationConfig: {
-            temperature: 0.4, // Further lowered slightly to encourage stricter adherence to formatting
+            temperature: 0.4,
             maxOutputTokens: 8000
         },
         safetySettings: [
@@ -478,8 +778,6 @@ ${jobDescription}
     if (data.candidates && data.candidates.length > 0 &&
         data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts.length > 0 &&
         typeof data.candidates[0].content.parts[0].text === 'string') {
-        // Log the raw output from Gemini for debugging
-        // console.log("Raw output from Gemini for resume customization:\n", data.candidates[0].content.parts[0].text);
         return data.candidates[0].content.parts[0].text;
     } else if (data.promptFeedback && data.promptFeedback.blockReason) {
         const blockReason = data.promptFeedback.blockReason;
@@ -490,325 +788,6 @@ ${jobDescription}
         console.warn("Gemini response structure unexpected, empty, or text part missing:", JSON.stringify(data));
         throw new Error('Gemini API returned an unexpected, empty, or improperly formatted response structure.');
     }
-}
-
-async function createWordDoc(content, title) {
-    const lines = content.split('\n').filter(line => line.trim());
-    const children = [];
-
-    // Check if content uses new marker format
-    const hasMarkers = content.includes('**NAME:**') || content.includes('**SECTION:**');
-
-    if (hasMarkers) {
-        // Use marker-based parsing for Gemini - handle all marker variants
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            // Handle NAME (with or without **)
-            if (trimmed.startsWith('**NAME:') || trimmed.startsWith('NAME:')) {
-                const text = trimmed.replace(/^\*?\*?NAME:\s*/, '').replace(/\*?\*?$/, '').trim();
-                if (text) {
-                    children.push(new Paragraph({
-                        children: [new TextRun({
-                            text: text,
-                            bold: true,
-                            size: 36,
-                            color: "2c5aa0"
-                        })],
-                        spacing: { after: 200 }
-                    }));
-                }
-            }
-            // Handle CONTACT
-            else if (trimmed.startsWith('CONTACT:')) {
-                const text = trimmed.replace(/^CONTACT:\s*/, '').trim();
-                if (text) {
-                    children.push(new Paragraph({
-                        children: [new TextRun({
-                            text: text,
-                            size: 20,
-                            color: "555555"
-                        })],
-                        spacing: { after: 300 }
-                    }));
-                }
-            }
-            // Handle SECTION
-            else if (trimmed.startsWith('SECTION:')) {
-                const text = trimmed.replace(/^SECTION:\s*/, '').trim();
-                if (text) {
-                    children.push(new Paragraph({
-                        children: [new TextRun({
-                            text: text,
-                            bold: true,
-                            size: 24,
-                            color: "2c5aa0"
-                        })],
-                        spacing: { before: 200, after: 200 }
-                    }));
-                }
-            }
-            // Handle SUMMARY_TEXT
-            else if (trimmed.startsWith('SUMMARY_TEXT:')) {
-                const text = trimmed.replace(/^SUMMARY_TEXT:\s*/, '').trim();
-                if (text) {
-                    children.push(new Paragraph({
-                        children: [new TextRun({
-                            text: text,
-                            size: 20,
-                            color: "333333"
-                        })],
-                        spacing: { after: 200 }
-                    }));
-                }
-            }
-            // Handle COMPANY (with or without **)
-            else if (trimmed.startsWith('**COMPANY:') || trimmed.startsWith('COMPANY:')) {
-                const text = trimmed.replace(/^\*?\*?COMPANY:\s*/, '').replace(/\*?\*?$/, '').trim();
-                if (text) {
-                    children.push(new Paragraph({
-                        children: [new TextRun({
-                            text: text,
-                            bold: true,
-                            size: 22,
-                            color: "000000"
-                        })],
-                        spacing: { before: 200, after: 100 }
-                    }));
-                }
-            }
-            // Handle TITLE (with or without **)
-            else if (trimmed.startsWith('**TITLE:') || trimmed.startsWith('TITLE:')) {
-                const text = trimmed.replace(/^\*?\*?TITLE:\s*/, '').replace(/\*?\*?$/, '').trim();
-                if (text) {
-                    children.push(new Paragraph({
-                        children: [new TextRun({
-                            text: text,
-                            bold: true,
-                            size: 20,
-                            color: "333333"
-                        })],
-                        spacing: { after: 100 }
-                    }));
-                }
-            }
-            // Handle DESC
-            else if (trimmed.startsWith('DESC:')) {
-                const text = trimmed.replace(/^DESC:\s*/, '').trim();
-                if (text) {
-                    children.push(new Paragraph({
-                        children: [new TextRun({
-                            text: text,
-                            size: 18,
-                            color: "555555",
-                            italics: true
-                        })],
-                        spacing: { after: 150 }
-                    }));
-                }
-            }
-            // Handle BULLET
-            else if (trimmed.startsWith('BULLET:')) {
-                const text = trimmed.replace(/^BULLET:\s*/, '').trim();
-                if (text) {
-                    children.push(new Paragraph({
-                        children: [new TextRun({
-                            text: text,
-                            size: 20,
-                            color: "333333"
-                        })],
-                        indent: { left: 200 },
-                        spacing: { after: 100 }
-                    }));
-                }
-            }
-            // Handle EDUCATION (with or without **)
-            else if (trimmed.startsWith('**EDUCATION:') || trimmed.startsWith('EDUCATION:')) {
-                const text = trimmed.replace(/^\*?\*?EDUCATION:\s*/, '').replace(/\*?\*?$/, '').trim();
-                if (text) {
-                    children.push(new Paragraph({
-                        children: [new TextRun({
-                            text: text,
-                            bold: true,
-                            size: 20,
-                            color: "000000"
-                        })],
-                        spacing: { after: 100 }
-                    }));
-                }
-            }
-            // Handle SKILL_CATEGORY
-            else if (trimmed.startsWith('SKILL_CATEGORY:')) {
-                const text = trimmed.replace(/^SKILL_CATEGORY:\s*/, '').trim();
-                if (text) {
-                    children.push(new Paragraph({
-                        children: [new TextRun({
-                            text: text,
-                            size: 20,
-                            color: "333333"
-                        })],
-                        spacing: { after: 100 }
-                    }));
-                }
-            }
-            // Handle SPACE
-            else if (trimmed === 'SPACE' || trimmed === '**SPACE**') {
-                children.push(new Paragraph({
-                    children: [new TextRun({ text: "" })],
-                    spacing: { after: 300 }
-                }));
-            }
-            // Skip any remaining marker lines
-            else if (!trimmed.match(/^(NAME|CONTACT|SECTION|SUMMARY_TEXT|COMPANY|TITLE|DESC|BULLET|EDUCATION|SKILL_CATEGORY|SPACE):/)) {
-                children.push(new Paragraph({
-                    children: [new TextRun({
-                        text: trimmed,
-                        size: 20,
-                        color: "333333"
-                    })],
-                    spacing: { after: 100 }
-                }));
-            }
-        }
-    } else {
-        // Fallback to content-based parsing for OpenAI/Claude
-        const cleanContent = cleanAIResponse(content)
-            .replace(/\*\*/g, '')
-            .replace(/\*/g, '')
-            .replace(/_{2,}/g, '')
-            .replace(/^_+|_+$/gm, '')
-            .replace(/^#+\s*/gm, '')
-            .replace(/`{1,3}/g, '')
-            .trim();
-
-        const cleanLines = cleanContent.split('\n').filter(line => line.trim());
-
-        for (let i = 0; i < cleanLines.length; i++) {
-            const line = cleanLines[i].trim();
-            if (!line) continue;
-
-            // Name (first line)
-            if (i === 0) {
-                children.push(new Paragraph({
-                    children: [new TextRun({
-                        text: line,
-                        bold: true,
-                        size: 36,
-                        color: "2c5aa0"
-                    })],
-                    spacing: { after: 200 }
-                }));
-            }
-            // Contact info
-            else if (line.includes('@') || line.includes('linkedin') || line.includes('github')) {
-                children.push(new Paragraph({
-                    children: [new TextRun({
-                        text: line,
-                        size: 20,
-                        color: "555555"
-                    })],
-                    spacing: { after: 300 }
-                }));
-            }
-            // Section headers
-            else if (line.match(/^(WORK EXPERIENCE|EDUCATION|CERTIFICATIONS|KEY SKILLS|SUMMARY)$/i)) {
-                children.push(new Paragraph({
-                    children: [new TextRun({
-                        text: line.toUpperCase(),
-                        bold: true,
-                        size: 24,
-                        color: "2c5aa0"
-                    })],
-                    spacing: { before: 200, after: 200 }
-                }));
-            }
-            // Summary text
-            else if (i > 0 && cleanLines[i-1].match(/SUMMARY/i) && line.length > 50) {
-                children.push(new Paragraph({
-                    children: [new TextRun({
-                        text: line,
-                        size: 20,
-                        color: "333333"
-                    })],
-                    spacing: { after: 200 }
-                }));
-            }
-            // Company info
-            else if (line.includes('|') && (line.includes('202') || line.includes('201'))) {
-                children.push(new Paragraph({
-                    children: [new TextRun({
-                        text: line,
-                        bold: true,
-                        size: 22,
-                        color: "000000"
-                    })],
-                    spacing: { before: 200, after: 100 }
-                }));
-            }
-            // Job titles
-            else if (line.includes('Manager') || line.includes('Engineer') || line.includes('Developer')) {
-                children.push(new Paragraph({
-                    children: [new TextRun({
-                        text: line,
-                        bold: true,
-                        size: 20,
-                        color: "333333"
-                    })],
-                    spacing: { after: 100 }
-                }));
-            }
-            // Bullets
-            else if (line.startsWith('•') || line.startsWith('*')) {
-                const bulletText = line.replace(/^[•*]\s*/, '');
-                children.push(new Paragraph({
-                    children: [new TextRun({
-                        text: '• ' + bulletText,
-                        size: 20,
-                        color: "333333"
-                    })],
-                    indent: { left: 200 },
-                    spacing: { after: 100 }
-                }));
-            }
-            // Education
-            else if (line.includes('University') || line.includes('Bachelor') || line.includes('Master')) {
-                children.push(new Paragraph({
-                    children: [new TextRun({
-                        text: line,
-                        bold: true,
-                        size: 20,
-                        color: "000000"
-                    })],
-                    spacing: { after: 100 }
-                }));
-            }
-            // Regular text
-            else {
-                children.push(new Paragraph({
-                    children: [new TextRun({
-                        text: line,
-                        size: 20,
-                        color: "333333"
-                    })],
-                    spacing: { after: 100 }
-                }));
-            }
-        }
-    }
-
-    const doc = new Document({
-        sections: [{
-            properties: {
-                page: {
-                    margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 }
-                }
-            },
-            children: children
-        }]
-    });
-
-    return await Packer.toBuffer(doc);
 }
 
 async function customizeWithClaude(resumeText, jobDescription, apiKey, type) {
