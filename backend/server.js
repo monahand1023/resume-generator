@@ -132,7 +132,6 @@ function cleanAIResponse(content) {
 }
 
 // Enhanced PDF creation function
-// Enhanced PDF creation function
 function createStyledPDF(content, name, company, position) {
     return new Promise((resolve, reject) => {
         try {
@@ -800,7 +799,25 @@ Resume: ${resumeText}
 Job: ${jobDescription}
 
 Output:`,
-        changes: `List key optimizations made. Format as bulleted list.
+        changes: `Analyze the resume optimization and provide a structured summary of changes made.
+
+Format your response EXACTLY like this:
+
+METRICS: [High-level summary with specific numbers, e.g., "Added 8 job-relevant keywords • Strengthened 12 achievement statements • Enhanced 3 skill sections"]
+
+CHANGE: [Brief title of first major change]
+BEFORE: [Original text from resume]
+AFTER: [Optimized text in new resume]
+
+CHANGE: [Brief title of second major change]
+BEFORE: [Original text from resume]
+AFTER: [Optimized text in new resume]
+
+CHANGE: [Brief title of third major change]
+BEFORE: [Original text from resume]
+AFTER: [Optimized text in new resume]
+
+Only include the 3-5 most impactful changes. Focus on specific text improvements, not general observations.
 
 Original Resume:
 ${resumeText}
@@ -808,7 +825,7 @@ ${resumeText}
 Job Requirements:
 ${jobDescription}
 
-Key Changes Made:`
+Provide structured analysis:`
     };
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -900,10 +917,25 @@ Resume: ${resumeText}
 Job: ${jobDescription}
 
 Begin Cover Letter:`,
-        changes: `Compare the original resume with the job requirements and list the key optimizations you would make. Be specific about keyword additions, rephrasing, and emphasis changes.
+        changes: `Analyze the resume optimization and provide a structured summary.
 
-Format as a concise bulleted list of changes:
-• [Specific change made and why]
+**IMPORTANT:** Format your response using these EXACT markers:
+
+**METRICS:** [High-level summary with specific numbers, e.g., "Added 8 job-relevant keywords • Strengthened 12 achievement statements • Enhanced 3 skill sections"]
+
+**CHANGE:** [Brief title of first major change]
+**BEFORE:** [Original text from resume]
+**AFTER:** [Optimized text in new resume]
+
+**CHANGE:** [Brief title of second major change]
+**BEFORE:** [Original text from resume]
+**AFTER:** [Optimized text in new resume]
+
+**CHANGE:** [Brief title of third major change]
+**BEFORE:** [Original text from resume]
+**AFTER:** [Optimized text in new resume]
+
+Only show the 3-5 most impactful changes. Focus on specific text improvements.
 
 **Original Resume:**
 ${resumeText}
@@ -911,7 +943,7 @@ ${resumeText}
 **Job Requirements:**
 ${jobDescription}
 
-**Key Changes Made:`
+**Begin structured analysis:**`
     };
 
     const modelName = 'gemini-1.5-pro-latest';
@@ -1027,7 +1059,25 @@ Resume: ${resumeText}
 Job: ${jobDescription}
 
 Output:`,
-        changes: `List key optimizations as bullets.
+        changes: `Analyze the resume optimization and provide a structured summary.
+
+Format your response using these exact markers:
+
+METRICS: [High-level summary with specific numbers, e.g., "Added 8 job-relevant keywords • Strengthened 12 achievement statements • Enhanced 3 skill sections"]
+
+CHANGE: [Brief title of first major change]
+BEFORE: [Original text from resume]
+AFTER: [Optimized text in new resume]
+
+CHANGE: [Brief title of second major change]
+BEFORE: [Original text from resume]
+AFTER: [Optimized text in new resume]
+
+CHANGE: [Brief title of third major change]
+BEFORE: [Original text from resume]
+AFTER: [Optimized text in new resume]
+
+Show only the 3-5 most impactful changes. Focus on specific text improvements.
 
 Original Resume:
 ${resumeText}
@@ -1035,7 +1085,7 @@ ${resumeText}
 Job Requirements:
 ${jobDescription}
 
-Key Changes Made:`
+Structured analysis:`
     };
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {

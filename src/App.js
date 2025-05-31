@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Link, Key, FileText, Mail, Loader2, Download, Eye, EyeOff, Info } from 'lucide-react';
+import { Upload, Link, Key, FileText, Mail, Loader2, Download, Eye, EyeOff, Info, TrendingUp } from 'lucide-react';
 
 function App() {
     const [openaiKey, setOpenaiKey] = useState('');
@@ -190,6 +190,47 @@ function App() {
         } catch (err) {
             setError(`Failed to download ${format.toUpperCase()}: ${err.message}`);
         }
+    };
+
+    // Helper function to parse structured changes data
+    const parseChangesData = (changesText) => {
+        if (!changesText) return null;
+
+        const lines = changesText.split('\n').filter(line => line.trim());
+        let metrics = '';
+        const keyChanges = [];
+        let currentChange = null;
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+
+            if (trimmed.includes('METRICS:')) {
+                metrics = trimmed.replace('METRICS:', '').trim();
+            } else if (trimmed.includes('CHANGE:')) {
+                if (currentChange) {
+                    keyChanges.push(currentChange);
+                }
+                currentChange = {
+                    title: trimmed.replace('CHANGE:', '').trim(),
+                    before: '',
+                    after: ''
+                };
+            } else if (trimmed.includes('BEFORE:')) {
+                if (currentChange) {
+                    currentChange.before = trimmed.replace('BEFORE:', '').trim();
+                }
+            } else if (trimmed.includes('AFTER:')) {
+                if (currentChange) {
+                    currentChange.after = trimmed.replace('AFTER:', '').trim();
+                }
+            }
+        }
+
+        if (currentChange) {
+            keyChanges.push(currentChange);
+        }
+
+        return { metrics, keyChanges };
     };
 
     // Temporary simple validation for debugging
@@ -472,6 +513,7 @@ function App() {
                                 title="OpenAI Results"
                                 results={results.openai}
                                 downloadFile={downloadFile}
+                                parseChangesData={parseChangesData}
                                 color="green"
                             />
                         )}
@@ -480,6 +522,7 @@ function App() {
                                 title="Gemini Results"
                                 results={results.gemini}
                                 downloadFile={downloadFile}
+                                parseChangesData={parseChangesData}
                                 color="blue"
                             />
                         )}
@@ -488,6 +531,7 @@ function App() {
                                 title="Claude Results"
                                 results={results.claude}
                                 downloadFile={downloadFile}
+                                parseChangesData={parseChangesData}
                                 color="purple"
                             />
                         )}
@@ -498,7 +542,7 @@ function App() {
     );
 }
 
-function ResultsSection({ title, results, downloadFile, color }) {
+function ResultsSection({ title, results, downloadFile, parseChangesData, color }) {
     const colorClasses = {
         green: {
             header: 'bg-green-50 border-green-200',
@@ -518,6 +562,7 @@ function ResultsSection({ title, results, downloadFile, color }) {
     };
 
     const classes = colorClasses[color];
+    const changesData = parseChangesData(results.changes);
 
     return (
         <div className={`border rounded-xl shadow-lg ${classes.header}`}>
@@ -530,16 +575,59 @@ function ResultsSection({ title, results, downloadFile, color }) {
                 )}
             </div>
 
-            {/* Changes Summary at top */}
-            {results.changes && (
-                <div className="p-4 bg-amber-50 border-b border-amber-200">
-                    <h3 className="flex items-center text-sm font-semibold text-amber-800 mb-2">
-                        <Info className="w-4 h-4 mr-2" />
-                        Key Changes Made
+            {/* Enhanced Changes Summary */}
+            {changesData && (
+                <div className="p-6 bg-gradient-to-r from-green-50 to-blue-50 border-b border-gray-200">
+                    <h3 className="flex items-center text-lg font-semibold text-gray-800 mb-4">
+                        <TrendingUp className="w-5 h-5 mr-2 text-green-600" />
+                        Resume Optimization Summary
                     </h3>
-                    <div className="text-sm text-amber-700">
-                        <pre className="whitespace-pre-wrap font-sans">{results.changes}</pre>
-                    </div>
+
+                    {/* High-level metrics */}
+                    {changesData.metrics && (
+                        <div className="bg-white rounded-lg p-4 mb-4 shadow-sm">
+                            <div className="flex items-center text-sm font-medium text-gray-600 mb-2">
+                                <Info className="w-4 h-4 mr-2" />
+                                Impact Overview
+                            </div>
+                            <p className="text-gray-800 font-medium">{changesData.metrics}</p>
+                        </div>
+                    )}
+
+                    {/* Key changes */}
+                    {changesData.keyChanges && changesData.keyChanges.length > 0 && (
+                        <div className="space-y-4">
+                            <h4 className="text-sm font-medium text-gray-600 mb-3">Key Improvements</h4>
+                            {changesData.keyChanges.map((change, index) => (
+                                <div key={index} className="bg-white rounded-lg p-4 shadow-sm">
+                                    <h5 className="font-medium text-gray-800 mb-3">{change.title}</h5>
+                                    <div className="space-y-2">
+                                        <div className="flex items-start">
+                                            <span className="text-xs font-medium text-red-600 bg-red-100 px-2 py-1 rounded mr-3 mt-0.5">BEFORE</span>
+                                            <p className="text-sm text-gray-600 flex-1">{change.before}</p>
+                                        </div>
+                                        <div className="flex items-start">
+                                            <span className="text-xs font-medium text-green-600 bg-green-100 px-2 py-1 rounded mr-3 mt-0.5">AFTER</span>
+                                            <p className="text-sm text-gray-800 flex-1 bg-green-50 p-2 rounded">{change.after}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Fallback for unstructured changes */}
+                    {!changesData.metrics && !changesData.keyChanges.length && results.changes && (
+                        <div className="bg-white rounded-lg p-4 shadow-sm">
+                            <div className="flex items-center text-sm font-medium text-gray-600 mb-2">
+                                <Info className="w-4 h-4 mr-2" />
+                                Changes Made
+                            </div>
+                            <div className="text-sm text-gray-700">
+                                <pre className="whitespace-pre-wrap font-sans">{results.changes}</pre>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -579,12 +667,6 @@ function DocumentCard({ title, icon, content, filename, downloadFile, buttonClas
             </div>
 
             <div className="p-4">
-                <div className="bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto mb-4">
-                    <pre className="whitespace-pre-wrap text-sm text-gray-700">
-                        {content}
-                    </pre>
-                </div>
-
                 <div className="flex gap-2">
                     <button
                         onClick={() => downloadFile(content, filename, 'txt', metadata)}
