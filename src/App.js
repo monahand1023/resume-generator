@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Link, Key, FileText, Mail, Loader2, Download, Eye, EyeOff } from 'lucide-react';
+import { Upload, Link, Key, FileText, Mail, Loader2, Download, Eye, EyeOff, Info } from 'lucide-react';
 
 function App() {
     const [openaiKey, setOpenaiKey] = useState('');
@@ -197,9 +197,6 @@ function App() {
     const hasGeminiKey = Boolean(geminiKey?.trim());
     const hasClaudeKey = Boolean(claudeKey?.trim());
     const canSubmit = Boolean(jobUrl?.trim() && resume);
-
-    // Debug logging
-    console.log('Debug - hasGeminiKey:', hasGeminiKey, 'canSubmit:', canSubmit, 'geminiKey length:', geminiKey?.length);
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
@@ -517,11 +514,6 @@ function ResultsSection({ title, results, downloadFile, color }) {
             header: 'bg-purple-50 border-purple-200',
             title: 'text-purple-800',
             button: 'bg-purple-600 hover:bg-purple-700'
-        },
-        orange: {
-            header: 'bg-orange-50 border-orange-200',
-            title: 'text-orange-800',
-            button: 'bg-orange-600 hover:bg-orange-700'
         }
     };
 
@@ -537,6 +529,19 @@ function ResultsSection({ title, results, downloadFile, color }) {
                     </p>
                 )}
             </div>
+
+            {/* Changes Summary at top */}
+            {results.changes && (
+                <div className="p-4 bg-amber-50 border-b border-amber-200">
+                    <h3 className="flex items-center text-sm font-semibold text-amber-800 mb-2">
+                        <Info className="w-4 h-4 mr-2" />
+                        Key Changes Made
+                    </h3>
+                    <div className="text-sm text-amber-700">
+                        <pre className="whitespace-pre-wrap font-sans">{results.changes}</pre>
+                    </div>
+                </div>
+            )}
 
             <div className="grid md:grid-cols-2 gap-6 p-6 bg-white">
                 <DocumentCard

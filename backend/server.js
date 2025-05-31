@@ -334,7 +334,8 @@ async function parseResumeFile(fileBuffer) {
 async function customizeWithOpenAI(resumeText, jobDescription, apiKey, type) {
     const prompts = {
         resume: `Customize this resume for the job posting. Focus on relevant skills and keywords from the job description. Keep the same general format but optimize content for this specific role. Return ONLY the customized resume content without any commentary or explanation.\n\nOriginal Resume:\n${resumeText}\n\nJob Description:\n${jobDescription}\n\nCustomized Resume:`,
-        cover_letter: `Write a professional cover letter based on this resume and job description. Return ONLY the cover letter content without any commentary.\n\nResume:\n${resumeText}\n\nJob Description:\n${jobDescription}\n\nCover Letter:`
+        cover_letter: `Write a professional cover letter based on this resume and job description. Return ONLY the cover letter content without any commentary.\n\nResume:\n${resumeText}\n\nJob Description:\n${jobDescription}\n\nCover Letter:`,
+        changes: `Compare the original resume with the job requirements and list the key optimizations made. Be specific about keyword additions, rephrasing, and emphasis changes. Format as a bulleted list.\n\nOriginal Resume:\n${resumeText}\n\nJob Requirements:\n${jobDescription}\n\nKey Changes Made:`
     };
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -362,52 +363,70 @@ async function customizeWithOpenAI(resumeText, jobDescription, apiKey, type) {
 async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
     const prompts = {
         resume: `
-**Your Task:** Analyze the provided resume and the target job description. Transform the resume into a highly ATS-friendly document that strategically highlights the candidate's qualifications and experiences most relevant to the specific job requirements, strictly adhering to the output format specified below.
+**Your Task:** Analyze the "Original Resume" and "Job Description" provided below. Your goal is to transform the "Original Resume" into a highly ATS-friendly document. You MUST strictly use the "CRITICAL OUTPUT FORMAT" markers ONCE for each piece of information in your final, generated output.
 
-**Phase 1: Analysis (Internal Thought Process - Do not output this analysis)**
+**Critical Input Handling Instruction:**
+- The "Original Resume" text (provided under "Original Resume:") MAY ALREADY CONTAIN formatting markers (e.g., "NAME:", "SECTION:", "BULLET:").
+- When you process each line or piece of information from the "Original Resume", you should consider the *content* of that information. If an existing marker is present in the input, treat it as an indicator of the data type for that line, but DO NOT repeat or embed these input markers within the *content* part of YOUR new output lines.
+- Your output should apply the "CRITICAL OUTPUT FORMAT" markers cleanly to the processed and optimized content. There should only be ONE valid marker prefixing each relevant line in your final output.
 
-1.  **Deeply Analyze the Job Description:**
-    * Identify core responsibilities, required hard and soft skills, essential qualifications, and specific technologies, methodologies, or keywords.
-    * Note the company's industry and any explicit needs or pain points mentioned.
-    * Extract any mentions of desired quantifiable achievements or specific outcomes.
+**CRITICAL OUTPUT FORMAT - Use these EXACT prefixes. Each marker should appear only once at the beginning of its respective line:**
 
-2.  **Thoroughly Review the Candidate's Resume:**
-    * Map existing skills, experiences, and accomplishments to the job description's requirements.
-    * Identify quantifiable achievements and their impact.
-    * Note areas where wording can be optimized to better reflect the job's language.
+**NAME:** [Full Name] (This must be the very first line of your output)
+**CONTACT:** [Email | Phone | LinkedIn | Location] (Single line, use | as a separator if multiple items)
+**SECTION:** [SECTION NAME] (e.g., SUMMARY, WORK EXPERIENCE, EDUCATION, SKILLS, CERTIFICATIONS)
+**SUMMARY_TEXT:** [2-4 sentence professional summary, if applicable. Content only, no repeated markers within.]
+**COMPANY:** [Company Name] | [Location] | [Employment Dates] (Content only after the marker)
+**TITLE:** [Job Title] (Content only after the marker)
+**DESC:** [Brief company description, if applicable per guidelines. Content only after the marker.] (Only for non-major companies unless already present in original resume)
+**BULLET:** • [Achievement/responsibility. The text of the achievement starts after the '• ' and should not contain further 'BULLET:' or '•' prefixes.]
+**EDUCATION:** [Degree/Certificate Name] | [Institution Name] | [Location] | [Dates/Year, if any] (Content only after the marker)
+**SKILL_CATEGORY:** [Category Name]: [Comma-separated list of skills] (Content only after the marker)
+**SPACE** (Use this marker on its own line where a visual break is desired between major sections or entries)
 
-**Phase 2: Resume Customization and Output Generation**
+**Content Customization Guidelines:**
+- **Preserve Core Content:** You MUST retain ALL original work experiences, achievements, and dates. Do not remove or summarize them.
+- **Optimize Wording:** Rephrase existing content for clarity, impact, and stronger alignment with the "Job Description".
+- **Integrate Keywords:** Naturally weave relevant keywords from the "Job Description" into the optimized resume content. Avoid stuffing.
+- **Company Descriptions:** Only add "DESC:" lines for non-major/lesser-known companies. If the original resume already includes a description for any company (even well-known ones), retain and optimize that description under the "DESC:" marker.
 
-**IMPORTANT Constraints & Guidelines:**
-* **Preserve All Content:** Keep ALL original work experiences, achievements, and dates. Do NOT remove or summarize any job experiences. Preserve all bullet points and their core accomplishments. Your role is to optimize wording and emphasize relevance, not to shorten or omit.
-* **Keyword Integration:** Naturally integrate keywords and key phrases from the job description into the existing resume content (summaries, experience descriptions, skills). Avoid keyword stuffing; ensure a natural flow.
-* **Company Descriptions:** For companies that are not globally recognized brands (e.g., startups, smaller companies), include a brief 1-2 line company description using the "DESC:" prefix. Skip descriptions for well-known FANG/MANGA-like companies or equivalents (e.g., Amazon, Google, Microsoft, Meta, Apple, Netflix, etc.) unless the original resume already provides a description for them, in which case, retain it.
-* **ATS-Friendly Wording:** Use action verbs and professional language that aligns with the job description.
+**Input Data:**
 
-**STRICT OUTPUT FORMAT REQUIREMENTS - Use these exact prefixes and structures:**
-
-* **SECTION HEADERS:** Use ALL CAPS (e.g., WORK EXPERIENCE, EDUCATION, SKILLS, SUMMARY).
-* **SUMMARY SECTION (if applicable):** If the original resume has a summary, or if you generate one, ensure it's 2-4 sentences, directly addressing the job's core requirements.
-* **WORK EXPERIENCE:**
-    * **Company Line:** "COMPANY: [Company Name] [Location] • [Dates of Employment]"
-    * **Job Title:** "TITLE: [Job Title]"
-    * **Company Description (if applicable, see guidelines above):** "DESC: [Brief company description]"
-    * **Achievements/Responsibilities:** Each bullet point MUST start with "• " (a bullet point character followed by a space). Retain all original bullet points, optimizing their wording for relevance and impact using keywords from the job description. Quantify achievements where possible using the existing data or by rephrasing.
-
-* **SKILLS SECTION:** List skills, prioritizing those mentioned in the job description.
-* **EDUCATION SECTION:** Follow a clear format for degrees, institutions, and dates.
-
-**Input for Customization:**
-
-**Original Resume Text:**
+**Original Resume:**
 ${resumeText}
 
-**Target Job Description Text:**
+**Job Description:**
 ${jobDescription}
 
-**Begin Customized Resume Output (Strictly Adhere to Format Requirements):**
+**Begin Formatted Output (Ensure every line of actual resume data starts with one of the specified markers, and only that one marker. Do not embed markers within the content of a line.):**
 `,
-        cover_letter: `Write a professional, compelling, and concise cover letter based on this resume and job description. Highlight the most relevant skills and experiences. Tailor the letter specifically to the job, expressing genuine interest.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
+        // Your cover_letter and changes prompts remain the same as you had them
+        cover_letter: `Write a professional cover letter. Use these format markers:
+
+**HEADER:** [Your Name]
+**ADDRESS:** [Your contact info]
+**DATE:** [Current date]
+**EMPLOYER:** [Hiring Manager / Company]
+**SUBJECT:** Application for [Position Title]
+**BODY_PARAGRAPH:** [Paragraph content] (Use for each paragraph)
+**CLOSING:** [Professional closing]
+
+Resume: ${resumeText}
+Job: ${jobDescription}
+
+Begin Cover Letter:`,
+        changes: `Compare the original resume with the job requirements and list the key optimizations you would make. Be specific about keyword additions, rephrasing, and emphasis changes.
+
+Format as a concise bulleted list of changes:
+• [Specific change made and why]
+
+**Original Resume:**
+${resumeText}
+
+**Job Requirements:**
+${jobDescription}
+
+**Key Changes Made:`
     };
 
     const modelName = 'gemini-1.5-pro-latest';
@@ -420,8 +439,8 @@ ${jobDescription}
             }]
         }],
         generationConfig: {
-            temperature: 0.5, // Slightly lowered for more predictable formatting adherence
-            maxOutputTokens: 8000 // Increased slightly to ensure full resume can be processed and generated
+            temperature: 0.4, // Further lowered slightly to encourage stricter adherence to formatting
+            maxOutputTokens: 8000
         },
         safetySettings: [
             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
@@ -459,6 +478,8 @@ ${jobDescription}
     if (data.candidates && data.candidates.length > 0 &&
         data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts.length > 0 &&
         typeof data.candidates[0].content.parts[0].text === 'string') {
+        // Log the raw output from Gemini for debugging
+        // console.log("Raw output from Gemini for resume customization:\n", data.candidates[0].content.parts[0].text);
         return data.candidates[0].content.parts[0].text;
     } else if (data.promptFeedback && data.promptFeedback.blockReason) {
         const blockReason = data.promptFeedback.blockReason;
@@ -472,115 +493,307 @@ ${jobDescription}
 }
 
 async function createWordDoc(content, title) {
-    const cleanContent = cleanAIResponse(content)
-        .replace(/\*\*/g, '') // Remove ** bold markers
-        .replace(/\*/g, '') // Remove * markers
-        .replace(/_{2,}/g, '') // Remove multiple underscores
-        .replace(/^_+|_+$/gm, '') // Remove leading/trailing underscores
-        .replace(/^#+\s*/gm, '') // Remove # headers
-        .replace(/`{1,3}/g, '') // Remove code markers
-        .trim();
-
-    const lines = cleanContent.split('\n').filter(line => line.trim());
+    const lines = content.split('\n').filter(line => line.trim());
     const children = [];
 
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
+    // Check if content uses new marker format
+    const hasMarkers = content.includes('**NAME:**') || content.includes('**SECTION:**');
 
-        // Name (first line)
-        if (i === 0) {
-            children.push(new Paragraph({
-                children: [new TextRun({
-                    text: line,
-                    bold: true,
-                    size: 36,
-                    color: "2c5aa0"
-                })],
-                spacing: { after: 200 }
-            }));
+    if (hasMarkers) {
+        // Use marker-based parsing for Gemini - handle all marker variants
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
 
-            // Contact info (has @ or phone patterns)
-        } else if (line.includes('@') || /\(\d{3}\)/.test(line)) {
-            children.push(new Paragraph({
-                children: [new TextRun({
-                    text: line,
-                    size: 20,
-                    color: "555555"
-                })],
-                spacing: { after: 300 }
-            }));
+            // Handle NAME (with or without **)
+            if (trimmed.startsWith('**NAME:') || trimmed.startsWith('NAME:')) {
+                const text = trimmed.replace(/^\*?\*?NAME:\s*/, '').replace(/\*?\*?$/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 36,
+                            color: "2c5aa0"
+                        })],
+                        spacing: { after: 200 }
+                    }));
+                }
+            }
+            // Handle CONTACT
+            else if (trimmed.startsWith('CONTACT:')) {
+                const text = trimmed.replace(/^CONTACT:\s*/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20,
+                            color: "555555"
+                        })],
+                        spacing: { after: 300 }
+                    }));
+                }
+            }
+            // Handle SECTION
+            else if (trimmed.startsWith('SECTION:')) {
+                const text = trimmed.replace(/^SECTION:\s*/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 24,
+                            color: "2c5aa0"
+                        })],
+                        spacing: { before: 200, after: 200 }
+                    }));
+                }
+            }
+            // Handle SUMMARY_TEXT
+            else if (trimmed.startsWith('SUMMARY_TEXT:')) {
+                const text = trimmed.replace(/^SUMMARY_TEXT:\s*/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20,
+                            color: "333333"
+                        })],
+                        spacing: { after: 200 }
+                    }));
+                }
+            }
+            // Handle COMPANY (with or without **)
+            else if (trimmed.startsWith('**COMPANY:') || trimmed.startsWith('COMPANY:')) {
+                const text = trimmed.replace(/^\*?\*?COMPANY:\s*/, '').replace(/\*?\*?$/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 22,
+                            color: "000000"
+                        })],
+                        spacing: { before: 200, after: 100 }
+                    }));
+                }
+            }
+            // Handle TITLE (with or without **)
+            else if (trimmed.startsWith('**TITLE:') || trimmed.startsWith('TITLE:')) {
+                const text = trimmed.replace(/^\*?\*?TITLE:\s*/, '').replace(/\*?\*?$/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 20,
+                            color: "333333"
+                        })],
+                        spacing: { after: 100 }
+                    }));
+                }
+            }
+            // Handle DESC
+            else if (trimmed.startsWith('DESC:')) {
+                const text = trimmed.replace(/^DESC:\s*/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 18,
+                            color: "555555",
+                            italics: true
+                        })],
+                        spacing: { after: 150 }
+                    }));
+                }
+            }
+            // Handle BULLET
+            else if (trimmed.startsWith('BULLET:')) {
+                const text = trimmed.replace(/^BULLET:\s*/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20,
+                            color: "333333"
+                        })],
+                        indent: { left: 200 },
+                        spacing: { after: 100 }
+                    }));
+                }
+            }
+            // Handle EDUCATION (with or without **)
+            else if (trimmed.startsWith('**EDUCATION:') || trimmed.startsWith('EDUCATION:')) {
+                const text = trimmed.replace(/^\*?\*?EDUCATION:\s*/, '').replace(/\*?\*?$/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            bold: true,
+                            size: 20,
+                            color: "000000"
+                        })],
+                        spacing: { after: 100 }
+                    }));
+                }
+            }
+            // Handle SKILL_CATEGORY
+            else if (trimmed.startsWith('SKILL_CATEGORY:')) {
+                const text = trimmed.replace(/^SKILL_CATEGORY:\s*/, '').trim();
+                if (text) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20,
+                            color: "333333"
+                        })],
+                        spacing: { after: 100 }
+                    }));
+                }
+            }
+            // Handle SPACE
+            else if (trimmed === 'SPACE' || trimmed === '**SPACE**') {
+                children.push(new Paragraph({
+                    children: [new TextRun({ text: "" })],
+                    spacing: { after: 300 }
+                }));
+            }
+            // Skip any remaining marker lines
+            else if (!trimmed.match(/^(NAME|CONTACT|SECTION|SUMMARY_TEXT|COMPANY|TITLE|DESC|BULLET|EDUCATION|SKILL_CATEGORY|SPACE):/)) {
+                children.push(new Paragraph({
+                    children: [new TextRun({
+                        text: trimmed,
+                        size: 20,
+                        color: "333333"
+                    })],
+                    spacing: { after: 100 }
+                }));
+            }
+        }
+    } else {
+        // Fallback to content-based parsing for OpenAI/Claude
+        const cleanContent = cleanAIResponse(content)
+            .replace(/\*\*/g, '')
+            .replace(/\*/g, '')
+            .replace(/_{2,}/g, '')
+            .replace(/^_+|_+$/gm, '')
+            .replace(/^#+\s*/gm, '')
+            .replace(/`{1,3}/g, '')
+            .trim();
 
-            // Section headers (ALL CAPS)
-        } else if (line === line.toUpperCase() && line.length < 30) {
-            children.push(new Paragraph({
-                children: [new TextRun({
-                    text: line,
-                    bold: true,
-                    size: 24,
-                    color: "2c5aa0"
-                })],
-                spacing: { before: 200, after: 200 }
-            }));
+        const cleanLines = cleanContent.split('\n').filter(line => line.trim());
 
-            // Company lines (Gemini formatted with COMPANY:)
-        } else if (line.startsWith('COMPANY:')) {
-            children.push(new Paragraph({
-                children: [new TextRun({
-                    text: line.replace('COMPANY: ', ''),
-                    bold: true,
-                    size: 24,
-                    color: "000000"
-                })],
-                spacing: { before: 200, after: 100 }
-            }));
+        for (let i = 0; i < cleanLines.length; i++) {
+            const line = cleanLines[i].trim();
+            if (!line) continue;
 
-            // Job titles (Gemini formatted with TITLE:)
-        } else if (line.startsWith('TITLE:')) {
-            children.push(new Paragraph({
-                children: [new TextRun({
-                    text: line.replace('TITLE: ', ''),
-                    bold: true,
-                    size: 20,
-                    color: "333333"
-                })],
-                spacing: { after: 100 }
-            }));
-
-            // Company descriptions (Gemini formatted with DESC:)
-        } else if (line.startsWith('DESC:')) {
-            children.push(new Paragraph({
-                children: [new TextRun({
-                    text: line.replace('DESC: ', ''),
-                    size: 20,
-                    color: "555555",
-                    italics: true
-                })],
-                spacing: { after: 200 }
-            }));
-
-            // Bullets (work experience)
-        } else if (line.startsWith('•')) {
-            children.push(new Paragraph({
-                children: [new TextRun({
-                    text: line,
-                    size: 20,
-                    color: "333333"
-                })],
-                indent: { left: 200 },
-                spacing: { after: 100 }
-            }));
-
-            // Everything else (regular text)
-        } else {
-            children.push(new Paragraph({
-                children: [new TextRun({
-                    text: line,
-                    size: 20,
-                    color: "333333"
-                })],
-                spacing: { after: 100 }
-            }));
+            // Name (first line)
+            if (i === 0) {
+                children.push(new Paragraph({
+                    children: [new TextRun({
+                        text: line,
+                        bold: true,
+                        size: 36,
+                        color: "2c5aa0"
+                    })],
+                    spacing: { after: 200 }
+                }));
+            }
+            // Contact info
+            else if (line.includes('@') || line.includes('linkedin') || line.includes('github')) {
+                children.push(new Paragraph({
+                    children: [new TextRun({
+                        text: line,
+                        size: 20,
+                        color: "555555"
+                    })],
+                    spacing: { after: 300 }
+                }));
+            }
+            // Section headers
+            else if (line.match(/^(WORK EXPERIENCE|EDUCATION|CERTIFICATIONS|KEY SKILLS|SUMMARY)$/i)) {
+                children.push(new Paragraph({
+                    children: [new TextRun({
+                        text: line.toUpperCase(),
+                        bold: true,
+                        size: 24,
+                        color: "2c5aa0"
+                    })],
+                    spacing: { before: 200, after: 200 }
+                }));
+            }
+            // Summary text
+            else if (i > 0 && cleanLines[i-1].match(/SUMMARY/i) && line.length > 50) {
+                children.push(new Paragraph({
+                    children: [new TextRun({
+                        text: line,
+                        size: 20,
+                        color: "333333"
+                    })],
+                    spacing: { after: 200 }
+                }));
+            }
+            // Company info
+            else if (line.includes('|') && (line.includes('202') || line.includes('201'))) {
+                children.push(new Paragraph({
+                    children: [new TextRun({
+                        text: line,
+                        bold: true,
+                        size: 22,
+                        color: "000000"
+                    })],
+                    spacing: { before: 200, after: 100 }
+                }));
+            }
+            // Job titles
+            else if (line.includes('Manager') || line.includes('Engineer') || line.includes('Developer')) {
+                children.push(new Paragraph({
+                    children: [new TextRun({
+                        text: line,
+                        bold: true,
+                        size: 20,
+                        color: "333333"
+                    })],
+                    spacing: { after: 100 }
+                }));
+            }
+            // Bullets
+            else if (line.startsWith('•') || line.startsWith('*')) {
+                const bulletText = line.replace(/^[•*]\s*/, '');
+                children.push(new Paragraph({
+                    children: [new TextRun({
+                        text: '• ' + bulletText,
+                        size: 20,
+                        color: "333333"
+                    })],
+                    indent: { left: 200 },
+                    spacing: { after: 100 }
+                }));
+            }
+            // Education
+            else if (line.includes('University') || line.includes('Bachelor') || line.includes('Master')) {
+                children.push(new Paragraph({
+                    children: [new TextRun({
+                        text: line,
+                        bold: true,
+                        size: 20,
+                        color: "000000"
+                    })],
+                    spacing: { after: 100 }
+                }));
+            }
+            // Regular text
+            else {
+                children.push(new Paragraph({
+                    children: [new TextRun({
+                        text: line,
+                        size: 20,
+                        color: "333333"
+                    })],
+                    spacing: { after: 100 }
+                }));
+            }
         }
     }
 
@@ -605,7 +818,8 @@ async function customizeWithClaude(resumeText, jobDescription, apiKey, type) {
 For companies that are not widely known (like startups or smaller companies), include a brief 1-2 line company description. Skip descriptions for well-known companies like Amazon, Google, Microsoft, Meta, etc.
 
 Resume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCustomized resume:`,
-        cover_letter: `Write a professional cover letter based on this resume and job description.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`
+        cover_letter: `Write a professional cover letter based on this resume and job description.\n\nResume:\n${resumeText}\n\nJob:\n${jobDescription}\n\nCover letter:`,
+        changes: `Compare the original resume with the job requirements and list the key optimizations made. Be specific about keyword additions, rephrasing, and emphasis changes. Format as a bulleted list.\n\nOriginal Resume:\n${resumeText}\n\nJob Requirements:\n${jobDescription}\n\nKey Changes Made:`
     };
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -664,14 +878,17 @@ app.post('/api/customize-resume', upload.single('resume'), async (req, res) => {
             return res.status(400).json({ error: 'Invalid provider' });
         }
 
-        const [customizedResume, coverLetter] = await Promise.all([
+        // Generate all three outputs
+        const [customizedResume, coverLetter, changes] = await Promise.all([
             customizeFunction(resumeText, jobDescription, apiKey, 'resume'),
-            customizeFunction(resumeText, jobDescription, apiKey, 'cover_letter')
+            customizeFunction(resumeText, jobDescription, apiKey, 'cover_letter'),
+            customizeFunction(resumeText, jobDescription, apiKey, 'changes')
         ]);
 
         res.json({
             resume: customizedResume,
             coverLetter: coverLetter,
+            changes: changes,
             metadata: {
                 name: name,
                 company: jobDetails.company,
