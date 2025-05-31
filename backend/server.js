@@ -122,6 +122,7 @@ function cleanAIResponse(content) {
 }
 
 // Enhanced PDF creation function
+// Enhanced PDF creation function
 function createStyledPDF(content, name, company, position) {
     return new Promise((resolve, reject) => {
         try {
@@ -139,7 +140,8 @@ function createStyledPDF(content, name, company, position) {
             // Check if content uses marker format
             const hasMarkers = lines.some(line =>
                 line.includes('NAME:') || line.includes('SECTION:') ||
-                line.includes('COMPANY:') || line.includes('TITLE:')
+                line.includes('COMPANY:') || line.includes('TITLE:') ||
+                line.includes('HEADER:') || line.includes('BODY_PARAGRAPH:')
             );
 
             if (hasMarkers) {
@@ -153,7 +155,7 @@ function createStyledPDF(content, name, company, position) {
                         doc.addPage();
                     }
 
-                    // Process each marker type
+                    // Resume markers (existing code)
                     if (trimmed.match(/^\*{0,2}NAME:/)) {
                         const text = trimmed.replace(/^\*{0,2}NAME:\s*\*{0,2}/, '').trim();
                         if (text) {
@@ -261,14 +263,15 @@ function createStyledPDF(content, name, company, position) {
                     else if (trimmed.match(/^\*{0,2}SPACE\*{0,2}$/)) {
                         doc.moveDown(0.4);
                     }
-                    // Cover letter markers
+                    // COVER LETTER MARKERS - PROPERLY FORMATTED
                     else if (trimmed.match(/^\*{0,2}HEADER:/)) {
                         const text = trimmed.replace(/^\*{0,2}HEADER:\s*\*{0,2}/, '').trim();
                         if (text) {
-                            doc.fontSize(14)
+                            doc.fontSize(16)
                                 .font('Helvetica-Bold')
-                                .text(text, { align: 'center' });
-                            doc.moveDown(0.5);
+                                .fillColor('#000000')
+                                .text(text, { align: 'left' });
+                            doc.moveDown(0.3);
                         }
                     }
                     else if (trimmed.match(/^\*{0,2}ADDRESS:/)) {
@@ -276,24 +279,28 @@ function createStyledPDF(content, name, company, position) {
                         if (text) {
                             doc.fontSize(10)
                                 .font('Helvetica')
-                                .text(text, { align: 'center' });
-                            doc.moveDown(0.3);
+                                .fillColor('#555555')
+                                .text(text, { align: 'left' });
+                            doc.moveDown(0.2);
                         }
                     }
                     else if (trimmed.match(/^\*{0,2}DATE:/)) {
                         const text = trimmed.replace(/^\*{0,2}DATE:\s*\*{0,2}/, '').trim();
                         if (text) {
+                            doc.moveDown(0.5);
                             doc.fontSize(10)
                                 .font('Helvetica')
+                                .fillColor('#000000')
                                 .text(text);
                             doc.moveDown(0.5);
                         }
                     }
                     else if (trimmed.match(/^\*{0,2}EMPLOYER:/)) {
                         const text = trimmed.replace(/^\*{0,2}EMPLOYER:\s*\*{0,2}/, '').trim();
-                        if (text) {
+                        if (text && text !== 'N/A') {
                             doc.fontSize(10)
                                 .font('Helvetica')
+                                .fillColor('#000000')
                                 .text(text);
                             doc.moveDown(0.1);
                         }
@@ -301,8 +308,10 @@ function createStyledPDF(content, name, company, position) {
                     else if (trimmed.match(/^\*{0,2}SUBJECT:/)) {
                         const text = trimmed.replace(/^\*{0,2}SUBJECT:\s*\*{0,2}/, '').trim();
                         if (text) {
-                            doc.fontSize(11)
-                                .font('Helvetica-Bold')
+                            doc.moveDown(0.3);
+                            doc.fontSize(10)
+                                .font('Helvetica')
+                                .fillColor('#000000')
                                 .text(text);
                             doc.moveDown(0.5);
                         }
@@ -312,7 +321,12 @@ function createStyledPDF(content, name, company, position) {
                         if (text) {
                             doc.fontSize(10)
                                 .font('Helvetica')
-                                .text(text, { width: 500, align: 'justify' });
+                                .fillColor('#000000')
+                                .text(text, {
+                                    width: 500,
+                                    align: 'left',
+                                    lineGap: 2
+                                });
                             doc.moveDown(0.5);
                         }
                     }
@@ -321,8 +335,9 @@ function createStyledPDF(content, name, company, position) {
                         if (text) {
                             doc.fontSize(10)
                                 .font('Helvetica')
+                                .fillColor('#000000')
                                 .text(text);
-                            doc.moveDown(0.3);
+                            doc.moveDown(0.2);
                         }
                     }
                 }
@@ -367,16 +382,17 @@ async function createWordDoc(content, title) {
     const hasMarkers = lines.some(line =>
         line.includes('NAME:') || line.includes('SECTION:') ||
         line.includes('COMPANY:') || line.includes('TITLE:') ||
-        line.includes('BULLET:') || line.includes('EDUCATION:')
+        line.includes('BULLET:') || line.includes('EDUCATION:') ||
+        line.includes('HEADER:') || line.includes('BODY_PARAGRAPH:')
     );
 
     if (hasMarkers) {
-        // Process Gemini's marker-based format
+        // Process marker-based format
         for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed) continue;
 
-            // Process each marker type
+            // Resume markers (existing)
             if (trimmed.match(/^\*{0,2}NAME:/)) {
                 const text = trimmed.replace(/^\*{0,2}NAME:\s*\*{0,2}/, '').trim();
                 if (text) {
@@ -514,6 +530,7 @@ async function createWordDoc(content, title) {
                     }));
                 }
             }
+            // COVER LETTER MARKERS - PROPERLY FORMATTED
             else if (trimmed.match(/^\*{0,2}HEADER:/)) {
                 const text = trimmed.replace(/^\*{0,2}HEADER:\s*\*{0,2}/, '').trim();
                 if (text) {
@@ -521,9 +538,10 @@ async function createWordDoc(content, title) {
                         children: [new TextRun({
                             text: text,
                             bold: true,
-                            size: 24
+                            size: 32,
+                            color: "000000"
                         })],
-                        spacing: { after: 100 }
+                        spacing: { after: 200 }
                     }));
                 }
             }
@@ -533,9 +551,10 @@ async function createWordDoc(content, title) {
                     children.push(new Paragraph({
                         children: [new TextRun({
                             text: text,
-                            size: 20
+                            size: 20,
+                            color: "555555"
                         })],
-                        spacing: { after: 200 }
+                        spacing: { after: 100 }
                     }));
                 }
             }
@@ -544,22 +563,31 @@ async function createWordDoc(content, title) {
                 if (text) {
                     children.push(new Paragraph({
                         children: [new TextRun({
-                            text: text,
+                            text: "",
                             size: 20
                         })],
                         spacing: { after: 200 }
+                    }));
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20,
+                            color: "000000"
+                        })],
+                        spacing: { after: 300 }
                     }));
                 }
             }
             else if (trimmed.match(/^\*{0,2}EMPLOYER:/)) {
                 const text = trimmed.replace(/^\*{0,2}EMPLOYER:\s*\*{0,2}/, '').trim();
-                if (text) {
+                if (text && text !== 'N/A') {
                     children.push(new Paragraph({
                         children: [new TextRun({
                             text: text,
-                            size: 20
+                            size: 20,
+                            color: "000000"
                         })],
-                        spacing: { after: 100 }
+                        spacing: { after: 50 }
                     }));
                 }
             }
@@ -568,11 +596,18 @@ async function createWordDoc(content, title) {
                 if (text) {
                     children.push(new Paragraph({
                         children: [new TextRun({
-                            text: text,
-                            bold: true,
-                            size: 22
+                            text: "",
+                            size: 20
                         })],
-                        spacing: { after: 200 }
+                        spacing: { after: 100 }
+                    }));
+                    children.push(new Paragraph({
+                        children: [new TextRun({
+                            text: text,
+                            size: 20,
+                            color: "000000"
+                        })],
+                        spacing: { after: 300 }
                     }));
                 }
             }
@@ -582,9 +617,11 @@ async function createWordDoc(content, title) {
                     children.push(new Paragraph({
                         children: [new TextRun({
                             text: text,
-                            size: 20
+                            size: 20,
+                            color: "000000"
                         })],
-                        spacing: { after: 200 }
+                        spacing: { after: 300 },
+                        alignment: "left"
                     }));
                 }
             }
@@ -594,7 +631,8 @@ async function createWordDoc(content, title) {
                     children.push(new Paragraph({
                         children: [new TextRun({
                             text: text,
-                            size: 20
+                            size: 20,
+                            color: "000000"
                         })],
                         spacing: { after: 100 }
                     }));
