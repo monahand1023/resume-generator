@@ -192,6 +192,19 @@ function App() {
         }
     };
 
+    // Helper function to clean markdown formatting
+    const cleanMarkdown = (text) => {
+        if (!text) return text;
+        return text
+            .replace(/\*\*/g, '')  // Remove **bold**
+            .replace(/\*/g, '')    // Remove *italic*
+            .replace(/_{2,}/g, '') // Remove multiple underscores
+            .replace(/^_+|_+$/gm, '') // Remove leading/trailing underscores
+            .replace(/^#+\s*/gm, '') // Remove # headers
+            .replace(/`{1,3}/g, '') // Remove code backticks
+            .trim();
+    };
+
     // Helper function to parse structured changes data
     const parseChangesData = (changesText) => {
         if (!changesText) return null;
@@ -205,23 +218,23 @@ function App() {
             const trimmed = line.trim();
 
             if (trimmed.includes('METRICS:')) {
-                metrics = trimmed.replace('METRICS:', '').trim();
+                metrics = cleanMarkdown(trimmed.replace('METRICS:', '').trim());
             } else if (trimmed.includes('CHANGE:')) {
                 if (currentChange) {
                     keyChanges.push(currentChange);
                 }
                 currentChange = {
-                    title: trimmed.replace('CHANGE:', '').trim(),
+                    title: cleanMarkdown(trimmed.replace('CHANGE:', '').trim()),
                     before: '',
                     after: ''
                 };
             } else if (trimmed.includes('BEFORE:')) {
                 if (currentChange) {
-                    currentChange.before = trimmed.replace('BEFORE:', '').trim();
+                    currentChange.before = cleanMarkdown(trimmed.replace('BEFORE:', '').trim());
                 }
             } else if (trimmed.includes('AFTER:')) {
                 if (currentChange) {
-                    currentChange.after = trimmed.replace('AFTER:', '').trim();
+                    currentChange.after = cleanMarkdown(trimmed.replace('AFTER:', '').trim());
                 }
             }
         }
