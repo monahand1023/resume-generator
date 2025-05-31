@@ -1,35 +1,24 @@
-# Build React frontend
-FROM node:20-alpine as frontend
+# Base image with Node
+FROM node:20
+
+# Set working directory
 WORKDIR /app
+
+# Copy package and install dependencies
 COPY package*.json ./
 RUN npm install
-COPY public/ ./public/
-COPY src/ ./src/
+
+# Copy rest of the app
+COPY . .
+
+# Build frontend (React app)
 RUN npm run build
 
-# Setup backend and serve
-FROM node:20-alpine
-WORKDIR /app
+# Move the built frontend into the Express public folder
+RUN rm -rf public && mv build public
 
-# Install Chrome for Puppeteer
-RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont
-
-# Backend setup
-COPY backend/package*.json ./
-RUN npm ci
-
-# Copy files
-COPY backend/server.js ./
-COPY --from=frontend /app/build ./public
-
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-
+# Expose port
 EXPOSE 3000
+
+# Start the server
 CMD ["node", "server.js"]
