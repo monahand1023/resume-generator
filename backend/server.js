@@ -15,6 +15,16 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+function getTodayDate() {
+    const today = new Date();
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+    const month = months[today.getMonth()];
+    const day = today.getDate();
+    const year = today.getFullYear();
+    return `${month} ${day}, ${year}`;
+}
+
 // Helper function to extract name from resume text
 function extractNameFromResume(resumeText) {
     const lines = resumeText.split('\n').filter(line => line.trim());
@@ -739,6 +749,8 @@ async function parseResumeFile(fileBuffer) {
 }
 
 async function customizeWithOpenAI(resumeText, jobDescription, apiKey, type) {
+    const todayDate = getTodayDate();
+
     const prompts = {
         resume: `Transform this resume for the job posting using this EXACT format. Each line must start with one of these markers:
 
@@ -767,7 +779,7 @@ Output:`,
 
 HEADER: [Full Name]
 ADDRESS: [Email | Phone | City, State]
-DATE: [Today's date]
+DATE: ${todayDate}
 EMPLOYER: [Hiring Manager Name or "Hiring Manager"]
 EMPLOYER: [Company Name]
 EMPLOYER: [Company Address if known]
@@ -822,6 +834,8 @@ Key Changes Made:`
 }
 
 async function customizeWithGemini(resumeText, jobDescription, apiKey, type) {
+    const todayDate = getTodayDate();
+
     const prompts = {
         resume: `
 **Your Task:** Analyze the "Original Resume" and "Job Description" provided below. Your goal is to transform the "Original Resume" into a highly ATS-friendly document. You MUST strictly use the "CRITICAL OUTPUT FORMAT" markers ONCE for each piece of information in your final, generated output.
@@ -861,12 +875,11 @@ ${jobDescription}
 
 **Begin Formatted Output (Ensure every line of actual resume data starts with one of the specified markers, and only that one marker. Do not embed markers within the content of a line.):**
 `,
-        // Your cover_letter and changes prompts remain the same as you had them
         cover_letter: `Write a professional cover letter. Use these format markers:
 
 **HEADER:** [Full Name]
 **ADDRESS:** [Email | Phone | City, State]
-**DATE:** [Today's date]
+**DATE:** ${todayDate}
 **EMPLOYER:** [Hiring Manager Name or "Hiring Manager"]
 **EMPLOYER:** [Company Name]
 **EMPLOYER:** [Company Address if known]
@@ -963,6 +976,8 @@ ${jobDescription}
 }
 
 async function customizeWithClaude(resumeText, jobDescription, apiKey, type) {
+    const todayDate = getTodayDate();
+
     const prompts = {
         resume: `Transform this resume for the job using this EXACT format:
 
@@ -991,7 +1006,7 @@ Output:`,
 
 HEADER: [Full Name]
 ADDRESS: [Email | Phone | City, State]
-DATE: [Today's date]
+DATE: ${todayDate}
 EMPLOYER: [Hiring Manager Name or "Hiring Manager"]
 EMPLOYER: [Company Name]
 EMPLOYER: [Company Address if known]
