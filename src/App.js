@@ -109,7 +109,16 @@ function App() {
             });
 
             if (!response.ok) {
-                throw new Error('Failed to process request');
+                // Try to get the error message from the server response
+                let serverError = 'Failed to process request';
+                try {
+                    const errorData = await response.json();
+                    serverError = errorData.error || serverError;
+                } catch (parseError) {
+                    // If we can't parse the error response, use the status text
+                    serverError = response.statusText || serverError;
+                }
+                throw new Error(serverError);
             }
 
             const data = await response.json();
@@ -117,13 +126,24 @@ function App() {
         } catch (err) {
             let errorMessage = err.message || 'Something went wrong';
 
-            // Handle specific API errors
-            if (err.message?.includes('429') || err.message?.includes('quota')) {
-                errorMessage = `${provider} API quota exceeded. Please check your billing or try again later.`;
-            } else if (err.message?.includes('401') || err.message?.includes('unauthorized')) {
-                errorMessage = `Invalid ${provider} API key. Please check your key.`;
-            } else if (err.message?.includes('403')) {
-                errorMessage = `${provider} API access denied. Check your permissions.`;
+            // Handle connection errors (server not running)
+            if (err.message && err.message.includes('fetch')) {
+                errorMessage = "The backend server isn't running. Did you forget to start it? Run 'node server.js' in the backend directory.";
+            }
+            // Handle specific API errors based on the actual error message
+            else {
+                const lowerError = errorMessage.toLowerCase();
+
+                if (lowerError.includes('quota') || lowerError.includes('429')) {
+                    errorMessage = `${provider} API quota exceeded. Please check your billing or try again later.`;
+                } else if (lowerError.includes('unauthorized') || lowerError.includes('401')) {
+                    errorMessage = `Invalid ${provider} API key. Please check your key and try again.`;
+                } else if (lowerError.includes('403') || lowerError.includes('forbidden')) {
+                    errorMessage = `${provider} API access denied. Check your permissions.`;
+                } else if (lowerError.includes('api error')) {
+                    // Keep the original server error message for API errors
+                    errorMessage = `${provider}: ${errorMessage}`;
+                }
             }
 
             setError(errorMessage);
@@ -276,6 +296,14 @@ function App() {
                                         {hasOpenaiKey && <span className="ml-2 text-green-600 text-xs">✓ Valid</span>}
                                         {openaiKey?.trim() && !hasOpenaiKey && <span className="ml-2 text-red-600 text-xs">✗ Invalid format</span>}
                                     </label>
+                                    <a
+                                        href="https://platform.openai.com/api-keys"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-blue-600 hover:text-blue-800 underline mb-2 block"
+                                    >
+                                        How To Get an OpenAI API Key
+                                    </a>
                                     <div className="relative">
                                         <input
                                             type={showKeys.openai ? "text" : "password"}
@@ -306,6 +334,14 @@ function App() {
                                         {hasGeminiKey && <span className="ml-2 text-green-600 text-xs">✓ Valid</span>}
                                         {geminiKey?.trim() && !hasGeminiKey && <span className="ml-2 text-red-600 text-xs">✗ Invalid format</span>}
                                     </label>
+                                    <a
+                                        href="https://ai.google.dev/gemini-api/docs/api-key"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-blue-600 hover:text-blue-800 underline mb-2 block"
+                                    >
+                                        How To Get a Gemini API Key
+                                    </a>
                                     <div className="relative">
                                         <input
                                             type={showKeys.gemini ? "text" : "password"}
@@ -336,6 +372,14 @@ function App() {
                                         {hasClaudeKey && <span className="ml-2 text-green-600 text-xs">✓ Valid</span>}
                                         {claudeKey?.trim() && !hasClaudeKey && <span className="ml-2 text-red-600 text-xs">✗ Invalid format</span>}
                                     </label>
+                                    <a
+                                        href="https://console.anthropic.com/settings/keys"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-blue-600 hover:text-blue-800 underline mb-2 block"
+                                    >
+                                        How To Get a Claude API Key
+                                    </a>
                                     <div className="relative">
                                         <input
                                             type={showKeys.claude ? "text" : "password"}
