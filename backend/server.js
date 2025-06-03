@@ -7,6 +7,7 @@ const cors = require('cors');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const { Document, Packer, Paragraph, TextRun, HeadingLevel } = require('docx');
+const Anthropic = require('@anthropic-ai/sdk');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -1014,6 +1015,11 @@ ${jobDescription}
 async function customizeWithClaude(resumeText, jobDescription, apiKey, type) {
     const todayDate = getTodayDate();
 
+    // Initialize Anthropic client with the API key
+    const anthropic = new Anthropic({
+        apiKey: apiKey
+    });
+
     const prompts = {
         resume: `Transform this resume for the job using this EXACT format:
 
@@ -1092,29 +1098,21 @@ ${jobDescription}
 Structured analysis:`
     };
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
+    try {
+        const message = await anthropic.messages.create({
             model: 'claude-3-5-sonnet-20241022',
             max_tokens: 3000,
             messages: [{
                 role: 'user',
                 content: prompts[type]
             }]
-        })
-    });
+        });
 
-    if (!response.ok) {
-        throw new Error(`Claude API error: ${response.statusText}`);
+        return message.content[0].text;
+    } catch (error) {
+        console.error('Claude API Error:', error);
+        throw new Error(`Claude API error: ${error.message}`);
     }
-
-    const data = await response.json();
-    return data.content[0].text;
 }
 
 function createPDF(content, title) {
