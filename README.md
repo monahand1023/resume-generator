@@ -1,4 +1,4 @@
-# Resume Customizer - AI-Powered Job Application Tool
+# Dan's Resume Customizer - AI-Powered Job Application Tool
 
 ## Overview
 
