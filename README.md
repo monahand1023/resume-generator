@@ -2,6 +2,10 @@
 
 ## Overview
 
+
+
+
+
 Dan's Resume Customizer is a lightweight web application that leverages multiple AI providers to automatically tailor resumes and generate cover letters for specific job postings. This tool addresses the common challenge job seekers face: customizing their application materials for each position while maintaining consistency and professional quality.
 
 There are already several commercial applications that do this, but they can be expensive, limited in features, and its not always clear how they modify your resume, and with LLM hallucinations, this can be dangerous.
@@ -14,8 +18,6 @@ You can download your results in three different formats: PDF, Word document, an
 ![Main Screenshot](images/main.png)
 
 ![Download Screenshot](images/download.png)
-
-![Summary Screenshot](images/summary.png)
 
 ### Core Problem Solved
 
