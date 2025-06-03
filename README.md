@@ -4,6 +4,12 @@
 
 The Resume Customizer is a sophisticated web application that leverages multiple AI providers to automatically tailor resumes and generate cover letters for specific job postings. This tool addresses the common challenge job seekers face: customizing their application materials for each position while maintaining consistency and professional quality.
 
+![Main Screenshot](images/main.png)
+
+![Download Screenshot](images/download.png)
+
+![Summary Screenshot](images/summary.png)
+
 ### Core Problem Solved
 
 In today's competitive job market, generic resumes often fail to pass Applicant Tracking Systems (ATS) or capture hiring managers' attention. This application solves this by:
