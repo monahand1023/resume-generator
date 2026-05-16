@@ -10,11 +10,54 @@ const { Document, Packer, Paragraph, TextRun, HeadingLevel } = require('docx');
 const Anthropic = require('@anthropic-ai/sdk');
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
+
+// ---------------------------------------------------------------------------
+// Multer security: MIME-type allowlist + 10 MB size cap
+// ---------------------------------------------------------------------------
+const ALLOWED_MAGIC_BYTES = {
+    pdf: [0x25, 0x50, 0x44, 0x46],       // %PDF
+    docx: [0x50, 0x4B, 0x03, 0x04],      // PK (ZIP-based OOXML)
+};
+
+const fileFilter = (req, file, cb) => {
+    const allowedMimes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/msword',
+    ];
+    if (allowedMimes.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error('File type not allowed. Only PDF and DOCX files are accepted.'), false);
+    }
+};
+
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+    fileFilter,
+});
+
+const checkMagicBytes = (buffer, type) => {
+    const magic = ALLOWED_MAGIC_BYTES[type];
+    return magic.every((byte, i) => buffer[i] === byte);
+};
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ---------------------------------------------------------------------------
+// Filename sanitizer – prevents Content-Disposition header injection
+// ---------------------------------------------------------------------------
+function sanitizeFilename(str) {
+    return String(str)
+        .replace(/[^\x20-\x7E]/g, '')        // remove non-printable / non-ASCII
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, '') // control chars and path chars
+        .replace(/["\\]/g, '')                // extra removal of quote / backslash
+        .trim()
+        .substring(0, 100);
+}
 
 function getTodayDate() {
     const today = new Date();
@@ -1129,6 +1172,13 @@ app.post('/api/customize-resume', upload.single('resume'), async (req, res) => {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
+        // Magic-byte verification (defence-in-depth beyond MIME check)
+        const isPDF = checkMagicBytes(resume, 'pdf');
+        const isDOCX = checkMagicBytes(resume, 'docx');
+        if (!isPDF && !isDOCX) {
+            return res.status(400).json({ error: 'Invalid file format. Only PDF and DOCX files are accepted.' });
+        }
+
         const jobDescription = await scrapeJobDescription(jobUrl);
         const resumeText = await parseResumeFile(resume);
 
@@ -1199,8 +1249,13 @@ app.post('/api/format-document', async (req, res) => {
             return res.status(400).json({ error: 'Unsupported format' });
         }
 
+        const safeBase = sanitizeFilename(filename);
+        const encodedFilename = encodeURIComponent(safeBase);
         res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}.${fileExtension}"`);
+        res.setHeader(
+            'Content-Disposition',
+            `attachment; filename="${safeBase}.${fileExtension}"; filename*=UTF-8''${encodedFilename}.${fileExtension}`
+        );
         res.send(buffer);
 
     } catch (error) {
