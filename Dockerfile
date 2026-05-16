@@ -1,24 +1,27 @@
-# Base image with Node
-FROM node:20
+FROM node:18-alpine
 
-# Set working directory
 WORKDIR /app
 
-# Copy package and install dependencies
+# Copy and install frontend dependencies, then build
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
-# Copy rest of the app
-COPY . .
-
-# Build frontend (React app)
+COPY public/ ./public/
+COPY src/ ./src/
 RUN npm run build
 
-# Move the built frontend into the Express public folder
-RUN rm -rf public && mv build public
+# Copy and install backend dependencies (production only)
+COPY backend/package*.json ./backend/
+WORKDIR /app/backend
+RUN npm ci --production
 
-# Expose port
+# Copy backend source
+WORKDIR /app
+COPY backend/ ./backend/
+
+# Move built React app into backend's public folder so Express serves it
+RUN rm -rf backend/public && mv build backend/public
+
 EXPOSE 3000
 
-# Start the server
-CMD ["node", "server.js"]
+CMD ["node", "backend/server.js"]
