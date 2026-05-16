@@ -88,13 +88,15 @@ function App() {
         }
     };
 
-    // Track polling intervals so we can clear them on unmount or completion
-    const pollingIntervals = React.useRef({});
+    // Track active EventSource connections so we can close them on unmount or re-submission
+    const eventSources = React.useRef({});
+    // Track per-provider progress (0-100)
+    const [progress, setProgress] = useState({ openai: 0, gemini: 0, claude: 0 });
 
-    // Clear all intervals on unmount
+    // Close all EventSource connections on unmount
     useEffect(() => {
         return () => {
-            Object.values(pollingIntervals.current).forEach(clearInterval);
+            Object.values(eventSources.current).forEach(es => es.close());
         };
     }, []);
 
@@ -107,13 +109,14 @@ function App() {
             return;
         }
 
-        // Clear any existing polling interval for this provider
-        if (pollingIntervals.current[provider]) {
-            clearInterval(pollingIntervals.current[provider]);
-            delete pollingIntervals.current[provider];
+        // Close any existing SSE connection for this provider
+        if (eventSources.current[provider]) {
+            eventSources.current[provider].close();
+            delete eventSources.current[provider];
         }
 
         setLoading(prev => ({ ...prev, [provider]: true }));
+        setProgress(prev => ({ ...prev, [provider]: 0 }));
         setError('');
 
         try {
@@ -141,43 +144,52 @@ function App() {
 
             const { jobId } = await response.json();
 
-            // Begin polling for job completion every 2 seconds
-            pollingIntervals.current[provider] = setInterval(async () => {
-                try {
-                    const pollRes = await fetch(`${BACKEND_URL}/api/job/${jobId}`);
-                    if (!pollRes.ok) {
-                        throw new Error(`Polling failed: ${pollRes.statusText}`);
-                    }
-                    const job = await pollRes.json();
+            // Open SSE stream for pushed job updates
+            const es = new EventSource(`${BACKEND_URL}/api/job/${jobId}/stream`);
+            eventSources.current[provider] = es;
 
-                    if (job.status === 'completed') {
-                        clearInterval(pollingIntervals.current[provider]);
-                        delete pollingIntervals.current[provider];
-                        setResults(prev => ({ ...prev, [provider]: job.result }));
-                        setLoading(prev => ({ ...prev, [provider]: false }));
-                    } else if (job.status === 'failed') {
-                        clearInterval(pollingIntervals.current[provider]);
-                        delete pollingIntervals.current[provider];
-                        setLoading(prev => ({ ...prev, [provider]: false }));
-                        let errorMessage = job.error || 'Something went wrong';
-                        const lowerError = errorMessage.toLowerCase();
-                        if (lowerError.includes('quota') || lowerError.includes('429')) {
-                            errorMessage = `${provider} API quota exceeded. Please check your billing or try again later.`;
-                        } else if (lowerError.includes('unauthorized') || lowerError.includes('401')) {
-                            errorMessage = `Invalid ${provider} API key. Please check your key and try again.`;
-                        } else if (lowerError.includes('403') || lowerError.includes('forbidden')) {
-                            errorMessage = `${provider} API access denied. Check your permissions.`;
-                        }
-                        setError(errorMessage);
-                    }
-                    // status === 'pending' or 'processing': keep polling
-                } catch (pollErr) {
-                    clearInterval(pollingIntervals.current[provider]);
-                    delete pollingIntervals.current[provider];
-                    setLoading(prev => ({ ...prev, [provider]: false }));
-                    setError(pollErr.message || 'Something went wrong while checking job status');
+            es.onmessage = (event) => {
+                let job;
+                try {
+                    job = JSON.parse(event.data);
+                } catch (_) {
+                    return; // ignore unparseable frames
                 }
-            }, 2000);
+
+                // Update progress bar
+                if (typeof job.progress === 'number') {
+                    setProgress(prev => ({ ...prev, [provider]: job.progress }));
+                }
+
+                if (job.status === 'completed') {
+                    es.close();
+                    delete eventSources.current[provider];
+                    setResults(prev => ({ ...prev, [provider]: job.result }));
+                    setLoading(prev => ({ ...prev, [provider]: false }));
+                } else if (job.status === 'failed') {
+                    es.close();
+                    delete eventSources.current[provider];
+                    setLoading(prev => ({ ...prev, [provider]: false }));
+                    let errorMessage = job.error || 'Something went wrong';
+                    const lowerError = errorMessage.toLowerCase();
+                    if (lowerError.includes('quota') || lowerError.includes('429')) {
+                        errorMessage = `${provider} API quota exceeded. Please check your billing or try again later.`;
+                    } else if (lowerError.includes('unauthorized') || lowerError.includes('401')) {
+                        errorMessage = `Invalid ${provider} API key. Please check your key and try again.`;
+                    } else if (lowerError.includes('403') || lowerError.includes('forbidden')) {
+                        errorMessage = `${provider} API access denied. Check your permissions.`;
+                    }
+                    setError(errorMessage);
+                }
+                // status 'pending' or 'processing': keep stream open
+            };
+
+            es.onerror = () => {
+                es.close();
+                delete eventSources.current[provider];
+                setLoading(prev => ({ ...prev, [provider]: false }));
+                setError('Connection lost while waiting for job to complete. Please try again.');
+            };
 
         } catch (err) {
             let errorMessage = err.message || 'Something went wrong';
@@ -589,6 +601,54 @@ function App() {
                                 )}
                             </button>
                         </div>
+
+                        {/* Progress bars — shown while a provider is loading */}
+                        {(loading.openai || loading.gemini || loading.claude) && (
+                            <div className="space-y-2">
+                                {loading.openai && (
+                                    <div>
+                                        <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                            <span>OpenAI</span>
+                                            <span>{progress.openai}%</span>
+                                        </div>
+                                        <div className="w-full bg-gray-200 rounded-full h-2">
+                                            <div
+                                                className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                                                style={{ width: `${progress.openai}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                {loading.gemini && (
+                                    <div>
+                                        <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                            <span>Gemini</span>
+                                            <span>{progress.gemini}%</span>
+                                        </div>
+                                        <div className="w-full bg-gray-200 rounded-full h-2">
+                                            <div
+                                                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                                                style={{ width: `${progress.gemini}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                {loading.claude && (
+                                    <div>
+                                        <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                            <span>Claude</span>
+                                            <span>{progress.claude}%</span>
+                                        </div>
+                                        <div className="w-full bg-gray-200 rounded-full h-2">
+                                            <div
+                                                className="bg-purple-500 h-2 rounded-full transition-all duration-300"
+                                                style={{ width: `${progress.claude}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Status Message */}
                         {(!jobUrl?.trim() || !resume) && (
