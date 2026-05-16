@@ -10,6 +10,7 @@ const { customizeWithGemini } = require('../services/ai/gemini');
 const { customizeWithClaude } = require('../services/ai/claude');
 const { createStyledPDF } = require('../services/document/pdf');
 const { createWordDoc } = require('../services/document/docx');
+const { enqueue, getJob } = require('../services/queue/jobQueue');
 
 // Magic-byte lookup (must match the multer guard in server.js)
 const ALLOWED_MAGIC_BYTES = {
@@ -33,38 +34,38 @@ function checkMagicBytes(buffer, type) {
  * Response (JSON):
  *   { resume, coverLetter, changes, metadata: { name, company, position } }
  */
-router.post('/customize-resume', async (req, res) => {
-    try {
-        const { jobUrl, apiKey, provider } = req.body;
-        const resume = req.file?.buffer;
+router.post('/customize-resume', (req, res) => {
+    const { jobUrl, apiKey, provider } = req.body;
+    const resume = req.file?.buffer;
 
-        if (!jobUrl || !apiKey || !resume || !provider) {
-            return res.status(400).json({ error: 'Missing required fields' });
-        }
+    if (!jobUrl || !apiKey || !resume || !provider) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
 
-        // Magic-byte verification (defence-in-depth beyond multer MIME check)
-        const isPDF = checkMagicBytes(resume, 'pdf');
-        const isDOCX = checkMagicBytes(resume, 'docx');
-        if (!isPDF && !isDOCX) {
-            return res.status(400).json({ error: 'Invalid file format. Only PDF and DOCX files are accepted.' });
-        }
+    // Magic-byte verification (defence-in-depth beyond multer MIME check)
+    const isPDF = checkMagicBytes(resume, 'pdf');
+    const isDOCX = checkMagicBytes(resume, 'docx');
+    if (!isPDF && !isDOCX) {
+        return res.status(400).json({ error: 'Invalid file format. Only PDF and DOCX files are accepted.' });
+    }
 
+    const providerMap = {
+        openai: customizeWithOpenAI,
+        gemini: customizeWithGemini,
+        claude: customizeWithClaude,
+    };
+
+    const customizeFunction = providerMap[provider];
+    if (!customizeFunction) {
+        return res.status(400).json({ error: 'Invalid provider' });
+    }
+
+    const jobId = enqueue(async () => {
         const jobDescription = await scrapeJobDescription(jobUrl);
         const resumeText = await parseResumeFile(resume);
 
         const name = extractNameFromResume(resumeText);
         const jobDetails = extractJobDetails(jobDescription);
-
-        const providerMap = {
-            openai: customizeWithOpenAI,
-            gemini: customizeWithGemini,
-            claude: customizeWithClaude,
-        };
-
-        const customizeFunction = providerMap[provider];
-        if (!customizeFunction) {
-            return res.status(400).json({ error: 'Invalid provider' });
-        }
 
         const [customizedResume, coverLetter, changes] = await Promise.all([
             customizeFunction(resumeText, jobDescription, apiKey, 'resume'),
@@ -72,16 +73,34 @@ router.post('/customize-resume', async (req, res) => {
             customizeFunction(resumeText, jobDescription, apiKey, 'changes'),
         ]);
 
-        res.json({
+        return {
             resume: customizedResume,
             coverLetter,
             changes,
             metadata: { name, company: jobDetails.company, position: jobDetails.position },
-        });
-    } catch (error) {
-        console.error('Error:', error);
-        res.status(500).json({ error: error.message });
+        };
+    });
+
+    res.status(202).json({ jobId, status: 'pending' });
+});
+
+/**
+ * GET /api/job/:jobId
+ *
+ * Returns the current state of an enqueued job.
+ * Response: { status, result, error, progress }
+ */
+router.get('/job/:jobId', (req, res) => {
+    const job = getJob(req.params.jobId);
+    if (!job) {
+        return res.status(404).json({ error: 'Job not found' });
     }
+    res.json({
+        status: job.status,
+        result: job.result,
+        error: job.error,
+        progress: job.progress,
+    });
 });
 
 /**

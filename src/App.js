@@ -88,6 +88,16 @@ function App() {
         }
     };
 
+    // Track polling intervals so we can clear them on unmount or completion
+    const pollingIntervals = React.useRef({});
+
+    // Clear all intervals on unmount
+    useEffect(() => {
+        return () => {
+            Object.values(pollingIntervals.current).forEach(clearInterval);
+        };
+    }, []);
+
     const handleSubmit = async (provider) => {
         const apiKeys = { openai: openaiKey, gemini: geminiKey, claude: claudeKey };
         const apiKey = apiKeys[provider];
@@ -95,6 +105,12 @@ function App() {
         if (!apiKey || !jobUrl || !resume) {
             setError('Please fill in all required fields');
             return;
+        }
+
+        // Clear any existing polling interval for this provider
+        if (pollingIntervals.current[provider]) {
+            clearInterval(pollingIntervals.current[provider]);
+            delete pollingIntervals.current[provider];
         }
 
         setLoading(prev => ({ ...prev, [provider]: true }));
@@ -113,31 +129,64 @@ function App() {
             });
 
             if (!response.ok) {
-                // Try to get the error message from the server response
                 let serverError = 'Failed to process request';
                 try {
                     const errorData = await response.json();
                     serverError = errorData.error || serverError;
                 } catch (parseError) {
-                    // If we can't parse the error response, use the status text
                     serverError = response.statusText || serverError;
                 }
                 throw new Error(serverError);
             }
 
-            const data = await response.json();
-            setResults(prev => ({ ...prev, [provider]: data }));
+            const { jobId } = await response.json();
+
+            // Begin polling for job completion every 2 seconds
+            pollingIntervals.current[provider] = setInterval(async () => {
+                try {
+                    const pollRes = await fetch(`${BACKEND_URL}/api/job/${jobId}`);
+                    if (!pollRes.ok) {
+                        throw new Error(`Polling failed: ${pollRes.statusText}`);
+                    }
+                    const job = await pollRes.json();
+
+                    if (job.status === 'completed') {
+                        clearInterval(pollingIntervals.current[provider]);
+                        delete pollingIntervals.current[provider];
+                        setResults(prev => ({ ...prev, [provider]: job.result }));
+                        setLoading(prev => ({ ...prev, [provider]: false }));
+                    } else if (job.status === 'failed') {
+                        clearInterval(pollingIntervals.current[provider]);
+                        delete pollingIntervals.current[provider];
+                        setLoading(prev => ({ ...prev, [provider]: false }));
+                        let errorMessage = job.error || 'Something went wrong';
+                        const lowerError = errorMessage.toLowerCase();
+                        if (lowerError.includes('quota') || lowerError.includes('429')) {
+                            errorMessage = `${provider} API quota exceeded. Please check your billing or try again later.`;
+                        } else if (lowerError.includes('unauthorized') || lowerError.includes('401')) {
+                            errorMessage = `Invalid ${provider} API key. Please check your key and try again.`;
+                        } else if (lowerError.includes('403') || lowerError.includes('forbidden')) {
+                            errorMessage = `${provider} API access denied. Check your permissions.`;
+                        }
+                        setError(errorMessage);
+                    }
+                    // status === 'pending' or 'processing': keep polling
+                } catch (pollErr) {
+                    clearInterval(pollingIntervals.current[provider]);
+                    delete pollingIntervals.current[provider];
+                    setLoading(prev => ({ ...prev, [provider]: false }));
+                    setError(pollErr.message || 'Something went wrong while checking job status');
+                }
+            }, 2000);
+
         } catch (err) {
             let errorMessage = err.message || 'Something went wrong';
 
             // Handle connection errors (server not running)
             if (err.message && err.message.includes('fetch')) {
                 errorMessage = "The backend server isn't running. Did you forget to start it? Run 'node server.js' in the backend directory.";
-            }
-            // Handle specific API errors based on the actual error message
-            else {
+            } else {
                 const lowerError = errorMessage.toLowerCase();
-
                 if (lowerError.includes('quota') || lowerError.includes('429')) {
                     errorMessage = `${provider} API quota exceeded. Please check your billing or try again later.`;
                 } else if (lowerError.includes('unauthorized') || lowerError.includes('401')) {
@@ -145,13 +194,11 @@ function App() {
                 } else if (lowerError.includes('403') || lowerError.includes('forbidden')) {
                     errorMessage = `${provider} API access denied. Check your permissions.`;
                 } else if (lowerError.includes('api error')) {
-                    // Keep the original server error message for API errors
                     errorMessage = `${provider}: ${errorMessage}`;
                 }
             }
 
             setError(errorMessage);
-        } finally {
             setLoading(prev => ({ ...prev, [provider]: false }));
         }
     };
@@ -495,7 +542,7 @@ function App() {
                                 {loading.openai ? (
                                     <>
                                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        OpenAI...
+                                        Customizing... (up to 60s)
                                     </>
                                 ) : (
                                     <>OpenAI</>
@@ -515,7 +562,7 @@ function App() {
                                 {loading.gemini ? (
                                     <>
                                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Gemini...
+                                        Customizing... (up to 60s)
                                     </>
                                 ) : (
                                     <>Gemini</>
@@ -535,7 +582,7 @@ function App() {
                                 {loading.claude ? (
                                     <>
                                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Claude...
+                                        Customizing... (up to 60s)
                                     </>
                                 ) : (
                                     <>Claude</>
