@@ -4,7 +4,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "build": "echo 'No build step needed'"
+    "build": "echo 'No build step needed'",
+    "test": "jest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.0",
@@ -16,5 +17,8 @@
     "pdf-parse": "^1.1.1",
     "pdfkit": "^0.17.1",
     "puppeteer": "^25.0.2"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2"
   }
 }
