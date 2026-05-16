@@ -12,6 +12,15 @@ const { createStyledPDF } = require('../services/document/pdf');
 const { createWordDoc } = require('../services/document/docx');
 const { enqueue, getJob } = require('../services/queue/jobQueue');
 
+function validateApiKeyFormat(provider, apiKey) {
+    const trimmed = (apiKey || '').trim();
+    if (!trimmed) return 'API key is required';
+    if (provider === 'openai' && !trimmed.startsWith('sk-')) return 'OpenAI API keys must start with "sk-"';
+    if (provider === 'claude' && !trimmed.startsWith('sk-ant-')) return 'Anthropic API keys must start with "sk-ant-"';
+    if (provider === 'gemini' && !trimmed.startsWith('AIza')) return 'Gemini API keys must start with "AIza"';
+    return null;
+}
+
 // Magic-byte lookup (must match the multer guard in server.js)
 const ALLOWED_MAGIC_BYTES = {
     pdf: [0x25, 0x50, 0x44, 0x46],
@@ -58,6 +67,11 @@ router.post('/customize-resume', (req, res) => {
     const customizeFunction = providerMap[provider];
     if (!customizeFunction) {
         return res.status(400).json({ error: 'Invalid provider' });
+    }
+
+    const keyFormatError = validateApiKeyFormat(provider, apiKey);
+    if (keyFormatError) {
+        return res.status(400).json({ error: keyFormatError });
     }
 
     const jobId = enqueue(async () => {

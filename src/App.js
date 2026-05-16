@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Link, Key, FileText, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Upload, Link, Key, FileText, Loader2, Eye, EyeOff, ChevronDown, ChevronUp, Clock, RefreshCw, AlertCircle, Trash2 } from 'lucide-react';
 import DownloadSection from './components/DownloadSection';
 import ChangesSection from './components/ChangesSection';
 
@@ -13,7 +13,16 @@ function App() {
     const [resume, setResume] = useState(null);
     const [loading, setLoading] = useState({ openai: false, gemini: false, claude: false });
     const [results, setResults] = useState({ openai: null, gemini: null, claude: null });
+    const [providerErrors, setProviderErrors] = useState({ openai: null, gemini: null, claude: null });
     const [error, setError] = useState('');
+    const [history, setHistory] = useState(() => {
+        try {
+            return JSON.parse(localStorage.getItem('resume_history') || '[]');
+        } catch (_) {
+            return [];
+        }
+    });
+    const [showHistory, setShowHistory] = useState(false);
     const [dragActive, setDragActive] = useState(false);
     const [showKeys, setShowKeys] = useState({ openai: false, gemini: false, claude: false });
 
@@ -51,6 +60,28 @@ function App() {
             localStorage.removeItem('claude_api_key');
         }
     }, [claudeKey]);
+
+    // Persist results to history whenever a provider result arrives
+    useEffect(() => {
+        const hasResult = results.openai || results.gemini || results.claude;
+        if (!hasResult) return;
+
+        setHistory(prev => {
+            const entry = {
+                timestamp: new Date().toISOString(),
+                jobUrl,
+                results,
+            };
+            const updated = [entry, ...prev].slice(0, 10);
+            try {
+                localStorage.setItem('resume_history', JSON.stringify(updated));
+            } catch (_) {
+                // localStorage quota exceeded — skip silently
+            }
+            return updated;
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [results]);
 
     const handleDrag = (e) => {
         e.preventDefault();
@@ -117,6 +148,7 @@ function App() {
 
         setLoading(prev => ({ ...prev, [provider]: true }));
         setProgress(prev => ({ ...prev, [provider]: 0 }));
+        setProviderErrors(prev => ({ ...prev, [provider]: null }));
         setError('');
 
         try {
@@ -179,7 +211,7 @@ function App() {
                     } else if (lowerError.includes('403') || lowerError.includes('forbidden')) {
                         errorMessage = `${provider} API access denied. Check your permissions.`;
                     }
-                    setError(errorMessage);
+                    setProviderErrors(prev => ({ ...prev, [provider]: errorMessage }));
                 }
                 // status 'pending' or 'processing': keep stream open
             };
@@ -188,7 +220,7 @@ function App() {
                 es.close();
                 delete eventSources.current[provider];
                 setLoading(prev => ({ ...prev, [provider]: false }));
-                setError('Connection lost while waiting for job to complete. Please try again.');
+                setProviderErrors(prev => ({ ...prev, [provider]: 'Connection lost while waiting for job to complete. Please try again.' }));
             };
 
         } catch (err) {
@@ -210,6 +242,7 @@ function App() {
                 }
             }
 
+            setProviderErrors(prev => ({ ...prev, [provider]: errorMessage }));
             setError(errorMessage);
             setLoading(prev => ({ ...prev, [provider]: false }));
         }
@@ -686,6 +719,25 @@ function App() {
                                     color="green"
                                 />
                             )}
+                            {!results.openai && providerErrors.openai && (
+                                <div className="border-l-4 border-red-300 pl-6">
+                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-red-800 mb-1">OpenAI failed</p>
+                                            <p className="text-sm text-red-700">{providerErrors.openai}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => handleSubmit('openai')}
+                                            disabled={loading.openai}
+                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+                                        >
+                                            <RefreshCw className="w-3.5 h-3.5" />
+                                            Retry
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             {results.gemini && (
                                 <DownloadSection
                                     title="Gemini Results"
@@ -694,6 +746,25 @@ function App() {
                                     color="blue"
                                 />
                             )}
+                            {!results.gemini && providerErrors.gemini && (
+                                <div className="border-l-4 border-red-300 pl-6">
+                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-red-800 mb-1">Gemini failed</p>
+                                            <p className="text-sm text-red-700">{providerErrors.gemini}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => handleSubmit('gemini')}
+                                            disabled={loading.gemini}
+                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+                                        >
+                                            <RefreshCw className="w-3.5 h-3.5" />
+                                            Retry
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             {results.claude && (
                                 <DownloadSection
                                     title="Claude Results"
@@ -701,6 +772,91 @@ function App() {
                                     downloadFile={downloadFile}
                                     color="purple"
                                 />
+                            )}
+                            {!results.claude && providerErrors.claude && (
+                                <div className="border-l-4 border-red-300 pl-6">
+                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-red-800 mb-1">Claude failed</p>
+                                            <p className="text-sm text-red-700">{providerErrors.claude}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => handleSubmit('claude')}
+                                            disabled={loading.claude}
+                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+                                        >
+                                            <RefreshCw className="w-3.5 h-3.5" />
+                                            Retry
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Provider error cards when no results have loaded at all yet */}
+                {!(results.openai || results.gemini || results.claude) && (providerErrors.openai || providerErrors.gemini || providerErrors.claude) && (
+                    <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
+                        <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Results</h2>
+                        <div className="space-y-4">
+                            {providerErrors.openai && (
+                                <div className="border-l-4 border-red-300 pl-6">
+                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-red-800 mb-1">OpenAI failed</p>
+                                            <p className="text-sm text-red-700">{providerErrors.openai}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => handleSubmit('openai')}
+                                            disabled={loading.openai}
+                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+                                        >
+                                            <RefreshCw className="w-3.5 h-3.5" />
+                                            Retry
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            {providerErrors.gemini && (
+                                <div className="border-l-4 border-red-300 pl-6">
+                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-red-800 mb-1">Gemini failed</p>
+                                            <p className="text-sm text-red-700">{providerErrors.gemini}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => handleSubmit('gemini')}
+                                            disabled={loading.gemini}
+                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+                                        >
+                                            <RefreshCw className="w-3.5 h-3.5" />
+                                            Retry
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            {providerErrors.claude && (
+                                <div className="border-l-4 border-red-300 pl-6">
+                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-red-800 mb-1">Claude failed</p>
+                                            <p className="text-sm text-red-700">{providerErrors.claude}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => handleSubmit('claude')}
+                                            disabled={loading.claude}
+                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+                                        >
+                                            <RefreshCw className="w-3.5 h-3.5" />
+                                            Retry
+                                        </button>
+                                    </div>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -732,6 +888,81 @@ function App() {
                                 parseChangesData={parseChangesData}
                                 color="purple"
                             />
+                        )}
+                    </div>
+                )}
+
+                {/* Previous Results / History */}
+                {history.length > 0 && (
+                    <div className="bg-white rounded-xl shadow-lg p-6 mt-8">
+                        <button
+                            className="w-full flex items-center justify-between text-left"
+                            onClick={() => setShowHistory(prev => !prev)}
+                        >
+                            <div className="flex items-center gap-2">
+                                <Clock className="w-5 h-5 text-gray-500" />
+                                <span className="text-lg font-semibold text-gray-900">
+                                    Previous Results
+                                </span>
+                                <span className="text-sm text-gray-500 font-normal">({history.length})</span>
+                            </div>
+                            {showHistory ? (
+                                <ChevronUp className="w-5 h-5 text-gray-400" />
+                            ) : (
+                                <ChevronDown className="w-5 h-5 text-gray-400" />
+                            )}
+                        </button>
+
+                        {showHistory && (
+                            <div className="mt-4">
+                                <div className="flex justify-end mb-3">
+                                    <button
+                                        onClick={() => {
+                                            localStorage.removeItem('resume_history');
+                                            setHistory([]);
+                                            setShowHistory(false);
+                                        }}
+                                        className="flex items-center gap-1.5 text-sm text-red-600 hover:text-red-800 transition-colors"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                        Clear history
+                                    </button>
+                                </div>
+                                <div className="space-y-2">
+                                    {history.map((entry, idx) => {
+                                        const date = new Date(entry.timestamp);
+                                        const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                                        const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+                                        const truncatedUrl = (entry.jobUrl || 'Unknown URL').length > 60
+                                            ? (entry.jobUrl || '').slice(0, 60) + '…'
+                                            : (entry.jobUrl || 'Unknown URL');
+                                        const providers = Object.entries(entry.results || {})
+                                            .filter(([, v]) => v)
+                                            .map(([k]) => k)
+                                            .join(', ');
+                                        return (
+                                            <div
+                                                key={idx}
+                                                className="flex items-center justify-between gap-4 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                                            >
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium text-gray-900 truncate">{truncatedUrl}</p>
+                                                    <p className="text-xs text-gray-500 mt-0.5">
+                                                        {dateStr} at {timeStr}
+                                                        {providers && <span className="ml-2 text-gray-400">• {providers}</span>}
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setResults(entry.results)}
+                                                    className="flex-shrink-0 text-sm font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
+                                                >
+                                                    Restore
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                         )}
                     </div>
                 )}

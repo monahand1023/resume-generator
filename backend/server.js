@@ -3,6 +3,7 @@
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
+const morgan = require('morgan');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 
@@ -57,9 +58,32 @@ const resumeLimiter = rateLimit({
 // ---------------------------------------------------------------------------
 const app = express();
 
-app.use(cors());
+const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+    : null; // null = allow all in dev
+
+app.use(cors({
+    origin: allowedOrigins
+        ? (origin, cb) => {
+            if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+            cb(new Error('Not allowed by CORS'));
+        }
+        : true,
+    credentials: false,
+}));
+app.use(morgan('combined'));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Health endpoint — not subject to the global rate limiter
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        uptime: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString(),
+        version: process.env.npm_package_version || '1.0.0',
+    });
+});
 
 app.use(globalLimiter);
 app.use('/api/customize-resume', resumeLimiter);
