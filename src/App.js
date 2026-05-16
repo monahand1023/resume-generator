@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Upload, Link, Key, FileText, Mail, Loader2, Download, Eye, EyeOff, Info, TrendingUp } from 'lucide-react';
 
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3000';
+
 function App() {
     const [openaiKey, setOpenaiKey] = useState('');
     const [geminiKey, setGeminiKey] = useState('');
@@ -103,7 +105,7 @@ function App() {
             formData.append('apiKey', apiKey);
             formData.append('provider', provider);
 
-            const response = await fetch('http://localhost:3000/api/customize-resume', {
+            const response = await fetch(`${BACKEND_URL}/api/customize-resume`, {
                 method: 'POST',
                 body: formData,
             });
@@ -187,7 +189,7 @@ function App() {
         try {
             const filename = generateFilename(baseFilename, metadata, format);
 
-            const response = await fetch('http://localhost:3000/api/format-document', {
+            const response = await fetch(`${BACKEND_URL}/api/format-document`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

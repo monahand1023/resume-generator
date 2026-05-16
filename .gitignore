@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# Build output
+build/
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+**/.DS_Store
+*.swp
+*.swo
+*.backup
+*_BACKUP.*
+
+# Runtime
+backend/*.log
