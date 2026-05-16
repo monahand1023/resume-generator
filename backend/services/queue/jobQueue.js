@@ -14,10 +14,12 @@ const jobs = new Map();
 /**
  * Enqueue an async function for background execution.
  *
- * @param {() => Promise<any>} fn - The async work to perform.
+ * @param {(onProgress: (pct: number) => void) => Promise<any>} fn - The async work to perform.
+ *   The function receives an optional `onProgress` callback it can invoke with a 0-100 value.
+ * @param {((pct: number) => void) | undefined} onProgress - Optional external progress listener.
  * @returns {string} jobId UUID
  */
-function enqueue(fn) {
+function enqueue(fn, onProgress) {
     const jobId = randomUUID();
 
     jobs.set(jobId, {
@@ -36,8 +38,17 @@ function enqueue(fn) {
         job.status = 'processing';
         job.progress = 10;
 
+        // Build a progress reporter that updates the job and notifies any listener
+        const progressCallback = (pct) => {
+            const clipped = Math.max(0, Math.min(100, pct));
+            job.progress = clipped;
+            if (typeof onProgress === 'function') {
+                onProgress(clipped);
+            }
+        };
+
         try {
-            const result = await fn();
+            const result = await fn(progressCallback);
             job.status = 'completed';
             job.result = result;
             job.progress = 100;
