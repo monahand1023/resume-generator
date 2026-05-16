@@ -104,6 +104,73 @@ router.get('/job/:jobId', (req, res) => {
 });
 
 /**
+ * GET /api/job/:jobId/stream
+ *
+ * Server-Sent Events endpoint. Streams job state until the job reaches a
+ * terminal state (completed | failed) or 120 seconds elapse.
+ *
+ * Event payload: JSON with { status, result, error, progress }
+ */
+router.get('/job/:jobId/stream', (req, res) => {
+    const job = getJob(req.params.jobId);
+    if (!job) {
+        return res.status(404).json({ error: 'Job not found' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const sendEvent = (data) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // Helper to send the current job snapshot
+    const sendJobState = () => {
+        sendEvent({
+            status: job.status,
+            result: job.result,
+            error: job.error,
+            progress: job.progress,
+        });
+    };
+
+    // Send current state immediately
+    sendJobState();
+
+    // If already terminal, close right away
+    if (job.status === 'completed' || job.status === 'failed') {
+        res.end();
+        return;
+    }
+
+    let interval = null;
+
+    // Maximum stream duration: 120 seconds
+    const timeout = setTimeout(() => {
+        if (interval) clearInterval(interval);
+        sendEvent({ status: 'failed', result: null, error: 'Stream timeout: job did not complete within 120 seconds', progress: 0 });
+        res.end();
+    }, 120_000);
+
+    interval = setInterval(() => {
+        if (job.status === 'completed' || job.status === 'failed') {
+            clearInterval(interval);
+            clearTimeout(timeout);
+            sendJobState();
+            res.end();
+        }
+    }, 250);
+
+    // Clean up on client disconnect
+    req.on('close', () => {
+        if (interval) clearInterval(interval);
+        clearTimeout(timeout);
+    });
+});
+
+/**
  * POST /api/format-document
  *
  * Body (JSON):
