@@ -35,10 +35,13 @@ The application follows a modern full-stack architecture designed for scalabilit
 ### Frontend Architecture (React)
 ```
 src/
-├── App.js              # Main application component
-├── index.js           # React entry point
-├── index.css          # Global styles
-└── components/        # Reusable UI components
+├── App.js                    # Main application component (state, handlers)
+├── index.js                  # React entry point
+├── index.css                 # Global styles
+└── components/
+    ├── DownloadSection.jsx   # Per-provider download card group
+    ├── ChangesSection.jsx    # Resume diff / changes analysis panel
+    └── DocumentCard.jsx      # Individual TXT/PDF/DOCX download buttons
 ```
 
 The frontend is built as a Single Page Application (SPA) using React 18 with functional components and hooks. It manages complex state including API keys, file uploads, and processing results across multiple AI providers.
@@ -46,8 +49,27 @@ The frontend is built as a Single Page Application (SPA) using React 18 with fun
 ### Backend Architecture (Express.js)
 ```
 backend/
-├── server.js          # Main server file with all routes and logic
-└── package.json       # Backend dependencies
+├── server.js                 # App setup, middleware, listen
+├── package.json              # Backend dependencies
+├── routes/
+│   └── resume.js             # Route definitions for /api endpoints
+├── services/
+│   ├── ai/
+│   │   ├── claude.js         # Anthropic Claude integration
+│   │   ├── gemini.js         # Google Gemini integration
+│   │   ├── openai.js         # OpenAI GPT-4 integration
+│   │   └── prompts.js        # Shared prompt factory (plain + markdown)
+│   └── document/
+│       ├── parser.js         # Tokenizes marker-based AI output
+│       ├── pdf.js            # PDFKit-based styled PDF generation
+│       └── docx.js           # DOCX library Word document generation
+├── utils/
+│   ├── clean.js              # cleanAIResponse, extractNameFromResume, etc.
+│   └── scraper.js            # Puppeteer job-page scraper, resume parser
+└── tests/
+    ├── clean.test.js
+    ├── parser.test.js
+    └── validation.test.js
 ```
 
 The backend serves as both an API server and a coordination layer between multiple external services:
@@ -143,18 +165,36 @@ npm install
 
 **3. Environment Configuration**
 
-The application uses environment variables for configuration. Create a `.env` file in the backend directory:
+The application uses environment variables for configuration.
 
+**Backend** – create `backend/.env`:
 ```bash
-# Backend server configuration
+# Server port (default: 3000)
 PORT=3000
 NODE_ENV=production
 
-# Puppeteer configuration (optional)
+# Puppeteer executable path (only needed in Docker / CI)
 PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ```
 
-**4. Start the Application**
+**Frontend** – create `.env` in the repo root (picked up by `react-scripts`):
+```bash
+# URL of the deployed backend. Defaults to http://localhost:3000 when not set.
+REACT_APP_BACKEND_URL=https://your-backend-host.example.com
+```
+
+**4. Build the Frontend**
+```bash
+# From the repo root
+npm run build
+```
+
+Then copy the build output into `backend/public/` so Express can serve it:
+```bash
+cp -r build backend/public
+```
+
+**5. Start the Application**
 ```bash
 # From the backend directory
 npm start
@@ -171,7 +211,16 @@ For production deployment, the application includes Docker configuration:
 docker-compose up --build
 ```
 
-This creates a containerized environment with all dependencies included, making deployment consistent across different environments.
+The Dockerfile builds the React frontend, installs backend dependencies (production-only), and starts `backend/server.js`. The built frontend is served as static files by Express.
+
+### Netlify Deployment (frontend only)
+
+If you want to host the frontend on Netlify while running the backend elsewhere (e.g. Railway, Fly.io, Render):
+
+1. Deploy the backend and note its public URL.
+2. In `netlify.toml`, replace `YOUR_BACKEND_URL` with that URL.
+3. Set `REACT_APP_BACKEND_URL` to the same URL in your Netlify environment variables.
+4. Push — Netlify will build and deploy the React app automatically.
 
 ## User Flow Documentation
 
@@ -340,6 +389,63 @@ const message = await anthropic.messages.create({
 
 **Response Handling**: Structured parsing extracts content from Claude's message format while handling potential safety blocks.
 
+## API Endpoints
+
+The Express backend exposes two endpoints under `/api`.
+
+---
+
+### `POST /api/customize-resume`
+
+Accepts a resume file and job URL; returns AI-generated resume, cover letter, and change analysis.
+
+**Request**: `multipart/form-data`
+
+| Field      | Type   | Required | Description |
+|------------|--------|----------|-------------|
+| `resume`   | File   | Yes      | PDF or DOCX, max 10 MB |
+| `jobUrl`   | string | Yes      | URL of the job posting to scrape |
+| `apiKey`   | string | Yes      | API key for the chosen AI provider |
+| `provider` | string | Yes      | `"openai"`, `"gemini"`, or `"claude"` |
+
+**Response**: `application/json`
+
+```json
+{
+  "resume": "NAME: John Smith\nSECTION: ...",
+  "coverLetter": "HEADER: John Smith\n...",
+  "changes": "METRICS: Added 8 keywords...\nCHANGE: ...",
+  "metadata": {
+    "name": "John Smith",
+    "company": "Acme Corp",
+    "position": "Senior Engineer"
+  }
+}
+```
+
+**Error responses**: `400 Missing required fields` | `400 Invalid file format` | `400 Invalid provider` | `500 <error message>`
+
+---
+
+### `POST /api/format-document`
+
+Converts AI-generated text into a downloadable PDF or DOCX file.
+
+**Request**: `application/json`
+
+| Field      | Type   | Required | Description |
+|------------|--------|----------|-------------|
+| `content`  | string | Yes      | AI output text (marker format or plain) |
+| `format`   | string | Yes      | `"pdf"` or `"docx"` |
+| `filename` | string | Yes      | Base filename (no extension) |
+| `metadata` | object | No       | `{ name?, company?, position? }` — used for PDF header |
+
+**Response**: Binary file download with appropriate `Content-Type` and `Content-Disposition` headers.
+
+**Error responses**: `400 Missing required fields` | `400 Unsupported format` | `500 Failed to format document`
+
+---
+
 ## Security and Privacy Considerations
 
 ### API Key Management
@@ -350,7 +456,7 @@ The application implements client-side API key storage for user convenience whil
 
 **No Server Persistence**: The backend never stores API keys, processing them only during active requests.
 
-**Secure Transmission**: All API communications use HTTPS to prevent interception during transmission.
+**Secure Transmission**: Calls from the backend to OpenAI, Gemini, and Anthropic always use HTTPS. Traffic between your browser and the Express server is encrypted only when the server is deployed behind TLS (e.g. a reverse proxy or a managed hosting platform). Running locally, traffic stays on loopback and is not encrypted in transit.
 
 ### Data Handling
 
