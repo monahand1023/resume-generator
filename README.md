@@ -38,6 +38,12 @@ Or with Docker:
 docker-compose up --build
 ```
 
+Or run the prebuilt image from GitHub Container Registry:
+
+```bash
+docker run -p 3000:3000 --env-file backend/.env ghcr.io/monahand1023/resume-generator:latest
+```
+
 ## Environment Variables
 
 Copy `.env.example` to `backend/.env`. Required variables:
