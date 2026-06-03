@@ -80,6 +80,13 @@ describe('outName', () => {
             'Jane_Doe_CoverLetter_Acme_SWE.docx'
         );
     });
+
+    test('caps absurdly long metadata so the filename stays valid', () => {
+        const meta = { name: 'Jane', company: 'Acme', position: 'X'.repeat(400) };
+        const file = outName('resume', meta, 'pdf');
+        expect(file.length).toBeLessThan(150); // well under the 255-byte FS limit
+        expect(file.endsWith('.pdf')).toBe(true);
+    });
 });
 
 describe('metricsLine', () => {

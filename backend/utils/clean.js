@@ -82,12 +82,24 @@ function extractNameFromResume(resumeText) {
  * @param {string} jobDescription
  * @returns {{ company: string, position: string }}
  */
+// Nav/boilerplate lines (job-board chrome) that should never be mistaken for a
+// company or job title.
+const BOILERPLATE_RE = /^(back to jobs|apply|share|save|sign in|log in|home|menu|search|jobs)\b/i;
+
+// A real company name or job title is short; reject longer candidates so a
+// run-on paragraph never becomes the "position".
+function candidate(line) {
+    const t = line.trim().split(/[:-]/)[0].trim();
+    return t && t.length <= 60 ? t : '';
+}
+
 function extractJobDetails(jobDescription) {
     const lines = jobDescription.split('\n').filter((l) => l.trim());
     let company = '';
     let position = '';
 
     for (const line of lines.slice(0, 20)) {
+        if (BOILERPLATE_RE.test(line.trim())) continue;
         const lower = line.toLowerCase();
 
         if (
@@ -97,7 +109,7 @@ function extractJobDetails(jobDescription) {
                 lower.includes('organization') ||
                 (line.length < 50 && /^[A-Z][a-zA-Z\s&.,Inc-]+$/.test(line.trim())))
         ) {
-            company = line.trim().split(/[:-]/)[0].trim();
+            company = candidate(line);
         }
 
         if (
@@ -110,7 +122,7 @@ function extractJobDetails(jobDescription) {
                     lower.includes('developer')) &&
                     line.length < 80))
         ) {
-            position = line.trim().split(/[:-]/)[0].trim();
+            position = candidate(line);
         }
 
         if (company && position) break;

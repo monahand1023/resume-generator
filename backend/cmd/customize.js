@@ -98,7 +98,16 @@ function pickProvider(requested, env, reg) {
     );
 }
 
-const cleanPart = (v, fallback) => String(v || fallback).replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+// Sanitize a filename component and cap its length — the company/position
+// heuristic can occasionally return a long blob, which would blow past the
+// filesystem's name limit.
+const cleanPart = (v, fallback) => {
+    const s = String(v || fallback)
+        .replace(/[^a-zA-Z0-9\s]/g, '')
+        .replace(/\s+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    return (s || fallback).slice(0, 40);
+};
 
 /** Builds an output filename, e.g. Jane_Doe_Resume_Acme_Senior_SWE.pdf */
 function outName(kind, meta, ext) {
