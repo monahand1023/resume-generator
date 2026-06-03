@@ -1,6 +1,6 @@
 # Resume Customizer
 
-AI-powered resume tailoring and cover letter generation. Upload your resume, paste a job URL, pick an AI provider — get a keyword-optimized resume and matching cover letter back in PDF, DOCX, or plain text.
+AI-powered resume tailoring and cover letter generation. Upload your resume, paste a job URL, pick an AI provider — get a keyword-optimized resume and matching cover letter back in PDF, DOCX, Markdown, or clean plain text.
 
 Runs locally via Docker. No data is stored or shared. You bring your own API key.
 
@@ -66,9 +66,11 @@ credentials (`AWS_PROFILE`, static keys, or an ambient IAM role) or force it on
 with `BEDROCK_ENABLED=true`. Tunables: `BEDROCK_MODEL_ID` (default
 `us.amazon.nova-lite-v1:0`), `AWS_REGION`/`BEDROCK_REGION` (default `us-west-2`).
 
-All other tunables (per-provider models, timeouts, rate limits, file-size cap,
-job TTL, `JD_MAX_LENGTH`) are env-driven — see `backend/config.js` for the full
-list and defaults.
+All other tunables are env-driven — see `backend/config.js` for the full list and
+defaults. Notable ones: per-provider models, timeouts, rate limits, file-size
+cap, job TTL, `JD_MAX_LENGTH`, the in-memory result-cache TTL
+(`RESULT_CACHE_TTL_MS`, default 24h), and the preview rate limit
+(`RATE_LIMIT_PREVIEW_MAX`, default 30/hour).
 
 Optional: `SMTP_*` vars for email delivery; `GOOGLE_SERVICE_ACCOUNT_CREDENTIALS` + `GOOGLE_SPREADSHEET_ID` for Sheets logging.
 
@@ -81,7 +83,14 @@ a user key, so the frontend renders only the available ones.
 - AI scrapes the JD and rewrites your resume with targeted keywords
 - Generates a matching cover letter
 - Shows a diff-style summary of what changed and why
-- Exports to TXT (ATS paste), PDF, and DOCX
+- **Preview inputs before running** — see the scraped job description and parsed
+  resume text (and the company/position detected from them) *without* spending
+  any AI tokens, so you can catch a bad scrape early
+- **Output validation** — malformed AI output is caught and surfaced as a
+  retryable error instead of producing a broken/empty document
+- **Result caching** — re-running the same resume + job URL + provider reuses the
+  prior result instead of re-spending API tokens (in-memory, never written to disk)
+- Exports to clean plain text (ATS paste), Markdown, PDF, and DOCX
 - Run multiple providers in parallel to compare outputs
 
 ## API
@@ -95,7 +104,21 @@ a user key, so the frontend renders only the available ones.
 | `apiKey` | string | Provider API key (omit for server-credential providers like `bedrock`) |
 | `provider` | string | `openai`, `gemini`, `claude`, or `bedrock` |
 
-**`POST /api/format-document`** — JSON: converts AI output text to a PDF or DOCX binary download.
+Runs asynchronously — returns `{ jobId }`; poll `GET /api/job/:jobId` or stream
+`GET /api/job/:jobId/stream` (SSE) for the result. Output is validated for the
+expected marker format before the job completes, and an identical re-run is
+served from the in-memory result cache.
+
+**`POST /api/preview`** — multipart/form-data (`resume`, `jobUrl`). Scrapes and
+parses the inputs *without* calling the AI; returns
+`{ jobDescription, resumeText, metadata: { name, company, position } }`. Same
+SSRF validation as customize.
+
+**`POST /api/format-document`** — JSON (`content`, `format`, `filename`, `metadata`):
+renders AI output text to a downloadable file. `format` is one of `txt` (clean,
+marker-stripped ATS plain text), `md` (Markdown), `pdf`, or `docx`.
+
+**`GET /api/providers`** — lists supported providers and whether each needs a user key.
 
 ## Security
 
