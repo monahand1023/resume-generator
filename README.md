@@ -26,7 +26,7 @@ cp -r build backend/public
 
 # Install backend
 cd backend && npm install
-cp ../.env.example .env   # fill in your API keys
+cp .env.example .env   # optional — sensible defaults work out of the box
 
 npm start   # http://localhost:3000
 ```
@@ -72,7 +72,8 @@ global command: `cd backend && npm link`, then `resume-customize ./resume.pdf "<
 
 ## Environment Variables
 
-Copy `.env.example` to `backend/.env`. Required variables:
+Copy `backend/.env.example` to `backend/.env`. Everything has a default, so an
+empty file works; the two you're most likely to set:
 
 | Variable | Purpose |
 |---|---|
@@ -98,8 +99,6 @@ defaults. Notable ones: per-provider models, timeouts, rate limits, file-size
 cap, job TTL, `JD_MAX_LENGTH`, the in-memory result-cache TTL
 (`RESULT_CACHE_TTL_MS`, default 24h), and the preview rate limit
 (`RATE_LIMIT_PREVIEW_MAX`, default 30/hour).
-
-Optional: `SMTP_*` vars for email delivery; `GOOGLE_SERVICE_ACCOUNT_CREDENTIALS` + `GOOGLE_SPREADSHEET_ID` for Sheets logging.
 
 `GET /api/providers` reports which providers this server supports and which need
 a user key, so the frontend renders only the available ones.
@@ -150,7 +149,7 @@ marker-stripped ATS plain text), `md` (Markdown), `pdf`, or `docx`.
 ## Security
 
 - API keys entered in the UI are stored in browser `localStorage` only — never sent to or persisted by the server (and redacted from server logs)
-- Resume content and job descriptions are processed in memory; nothing is written to disk
+- Resume content and job descriptions are processed in memory; the result cache is in-memory only. Job state/results are persisted to a local SQLite file (`jobs.db`) for restart recovery — never sent off your machine
 - **SSRF protection**: job URLs are validated before scraping — only http/https, and any hostname resolving to a private/reserved IP (RFC 1918, loopback, link-local, cloud metadata at 169.254.169.254) is rejected, including across redirects
 - CORS, CSP, and standard security headers configured
 
