@@ -11,7 +11,7 @@ const path = require('path');
 const config = require('../config');
 const { validateJobUrl } = require('../utils/ssrf');
 const { scrapeJobDescription, parseResumeFile } = require('../utils/scraper');
-const { extractNameFromResume, extractJobDetails } = require('../utils/clean');
+const { extractNameFromResume, resolveJobDetails } = require('../utils/clean');
 const registry = require('../services/ai');
 const { missingMarkers } = require('../services/ai/validate');
 const { createStyledPDF } = require('../services/document/pdf');
@@ -198,18 +198,19 @@ async function main(argv = process.argv) {
     if (resumeText.length > config.maxResumeChars) resumeText = resumeText.slice(0, config.maxResumeChars);
     process.stderr.write('✓\n');
 
-    const meta = {
-        name: extractNameFromResume(resumeText),
-        ...extractJobDetails(jobDescription),
-    };
-
     step(`generating with ${provider.id}…  `);
-    const [resumeOut, coverLetter, changes] = await Promise.all([
+    const [resumeOut, coverLetter, changes, jobDetailsRaw] = await Promise.all([
         provider.customize({ resumeText, jobDescription, apiKey, type: 'resume' }),
         provider.customize({ resumeText, jobDescription, apiKey, type: 'cover_letter' }),
         provider.customize({ resumeText, jobDescription, apiKey, type: 'changes' }),
+        provider.customize({ resumeText: '', jobDescription, apiKey, type: 'job_details' }).catch(() => null),
     ]);
     process.stderr.write('✓\n');
+
+    const meta = {
+        name: extractNameFromResume(resumeText),
+        ...resolveJobDetails(jobDetailsRaw, jobDescription),
+    };
 
     const bad = [...missingMarkers(resumeOut, 'resume'), ...missingMarkers(coverLetter, 'cover_letter')];
     if (bad.length) {

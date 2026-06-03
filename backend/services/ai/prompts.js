@@ -161,9 +161,36 @@ ${format === 'markdown' ? '**Begin structured analysis:**' : 'Provide structured
 }
 
 /**
+ * Builds the job-details extraction prompt: pulls the hiring company and job
+ * title out of the posting. Used for accurate metadata/filenames in place of the
+ * brittle regex heuristic.
+ *
+ * @param {string} jobDescription
+ * @param {'plain'|'markdown'} format
+ * @returns {string}
+ */
+function buildJobDetailsPrompt(jobDescription, format) {
+    const m = (label) => (format === 'markdown' ? `**${label}:**` : `${label}:`);
+
+    return `Identify the hiring company and the job title from the job posting below.
+
+Output EXACTLY these two lines and nothing else — no preamble, no extra text:
+
+${m('COMPANY')} [the hiring company's name, or Unknown]
+${m('POSITION')} [the exact job title, or Unknown]
+
+Do not include locations, departments, seniority notes, or commentary — only the
+company name and the job title.
+
+Job Posting:
+${jobDescription}
+`;
+}
+
+/**
  * Returns the prompt string for the given type and format.
  *
- * @param {'resume'|'cover_letter'|'changes'} type
+ * @param {'resume'|'cover_letter'|'changes'|'job_details'} type
  * @param {string} resumeText
  * @param {string} jobDescription
  * @param {'plain'|'markdown'} format
@@ -177,6 +204,8 @@ function createPrompt(type, resumeText, jobDescription, format = 'plain') {
             return buildCoverLetterPrompt(resumeText, jobDescription, format);
         case 'changes':
             return buildChangesPrompt(resumeText, jobDescription, format);
+        case 'job_details':
+            return buildJobDetailsPrompt(jobDescription, format);
         default:
             throw new Error(`Unknown prompt type: ${type}`);
     }

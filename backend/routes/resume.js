@@ -7,7 +7,7 @@ const config = require('../config');
 const logger = require('../utils/logger');
 const { scrapeJobDescription, parseResumeFile } = require('../utils/scraper');
 const { validateJobUrl } = require('../utils/ssrf');
-const { extractNameFromResume, extractJobDetails, sanitizeFilename } = require('../utils/clean');
+const { extractNameFromResume, extractJobDetails, resolveJobDetails, sanitizeFilename } = require('../utils/clean');
 const registry = require('../services/ai');
 const { missingMarkers } = require('../services/ai/validate');
 const { createStyledPDF } = require('../services/document/pdf');
@@ -109,13 +109,22 @@ router.post('/customize-resume', async (req, res) => {
         }
 
         const name = extractNameFromResume(resumeText);
-        const jobDetails = extractJobDetails(jobDescription);
 
-        const [customizedResume, coverLetter, changes] = await Promise.all([
+        const [customizedResume, coverLetter, changes, jobDetailsRaw] = await Promise.all([
             descriptor.customize({ resumeText, jobDescription, apiKey, type: 'resume' }),
             descriptor.customize({ resumeText, jobDescription, apiKey, type: 'cover_letter' }),
             descriptor.customize({ resumeText, jobDescription, apiKey, type: 'changes' }),
+            // Cheap, parallel call — extract company/title accurately. Best-effort:
+            // on failure we fall back to the regex heuristic.
+            descriptor
+                .customize({ resumeText: '', jobDescription, apiKey, type: 'job_details' })
+                .catch((err) => {
+                    logger.warn('job_details extraction failed; using heuristic', { provider, error: err });
+                    return null;
+                }),
         ]);
+
+        const jobDetails = resolveJobDetails(jobDetailsRaw, jobDescription);
 
         // Reject malformed output for the downloadable documents so it never
         // reaches the renderers. The changes summary has a graceful raw-text

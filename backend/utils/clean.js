@@ -131,6 +131,51 @@ function extractJobDetails(jobDescription) {
     return { company: company || 'Company', position: position || 'Position' };
 }
 
+// Pulls the text after a `MARKER:` line (tolerant of markdown **bold**).
+function markerValue(text, marker) {
+    const m = new RegExp(`^\\s*\\*{0,2}${marker}:\\s*\\*{0,2}(.+)$`, 'im').exec(text || '');
+    return m ? m[1].replace(/\*\*/g, '').trim() : '';
+}
+
+// Rejects empty, placeholder, or implausibly-long extracted values.
+function saneValue(s) {
+    const t = (s || '').trim();
+    if (!t || t.includes('[') || t.includes(']') || t.length > 80) return '';
+    if (/^(unknown|n\/?a|none|not\b)/i.test(t)) return '';
+    return t;
+}
+
+/**
+ * Parses `COMPANY:` / `POSITION:` from AI extraction output into a
+ * { company, position } object. Unusable values become empty strings.
+ *
+ * @param {string|null} aiRaw
+ * @returns {{ company: string, position: string }}
+ */
+function parseJobDetails(aiRaw) {
+    return {
+        company: saneValue(markerValue(aiRaw, 'COMPANY')),
+        position: saneValue(markerValue(aiRaw, 'POSITION')),
+    };
+}
+
+/**
+ * Resolves the job's company and position, preferring the AI extraction output
+ * and falling back per-field to the regex heuristic (and finally its defaults).
+ *
+ * @param {string|null} aiRaw          Output of a `job_details` AI call
+ * @param {string} jobDescription      Scraped job description (heuristic fallback)
+ * @returns {{ company: string, position: string }}
+ */
+function resolveJobDetails(aiRaw, jobDescription) {
+    const ai = parseJobDetails(aiRaw);
+    const heuristic = extractJobDetails(jobDescription);
+    return {
+        company: ai.company || heuristic.company,
+        position: ai.position || heuristic.position,
+    };
+}
+
 /**
  * Returns today's date as a human-readable string, e.g. "May 16, 2026".
  *
@@ -165,6 +210,8 @@ module.exports = {
     cleanAIResponse,
     extractNameFromResume,
     extractJobDetails,
+    parseJobDetails,
+    resolveJobDetails,
     getTodayDate,
     sanitizeFilename,
 };
