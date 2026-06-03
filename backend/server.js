@@ -7,10 +7,13 @@ const morgan = require('morgan');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 
+const config = require('./config');
+const logger = require('./utils/logger');
+const registry = require('./services/ai');
 const resumeRoutes = require('./routes/resume');
 
 // ---------------------------------------------------------------------------
-// Multer security: MIME-type allowlist + 10 MB size cap
+// Multer security: MIME-type allowlist + size cap
 // ---------------------------------------------------------------------------
 const fileFilter = (req, file, cb) => {
     const allowedMimes = [
@@ -27,27 +30,25 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+    limits: { fileSize: config.maxFileSizeBytes },
     fileFilter,
 });
 
 // ---------------------------------------------------------------------------
 // Rate limiters
 // ---------------------------------------------------------------------------
-
-// Global rate limit: 100 requests per 15 minutes per IP
 const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
+    windowMs: config.rateLimit.global.windowMs,
+    max: config.rateLimit.global.max,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later.' },
 });
 
-// Strict limit for the expensive AI endpoint: 10 per hour
+// Strict limit for the expensive AI endpoint.
 const resumeLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000,
-    max: 10,
+    windowMs: config.rateLimit.resume.windowMs,
+    max: config.rateLimit.resume.max,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Rate limit exceeded for resume customization. Please wait before trying again.' },
@@ -58,9 +59,7 @@ const resumeLimiter = rateLimit({
 // ---------------------------------------------------------------------------
 const app = express();
 
-const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-    : null; // null = allow all in dev
+const allowedOrigins = config.corsOrigins; // null = allow all in dev
 
 app.use(cors({
     origin: allowedOrigins
@@ -100,9 +99,36 @@ app.get('*', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Error handler — turn known failures into clean 4xx responses instead of a
+// generic 500 (multer upload errors, CORS rejections).
+// ---------------------------------------------------------------------------
+// eslint-disable-next-line no-unused-vars -- Express needs the 4-arg signature
+app.use((err, req, res, next) => {
+    if (res.headersSent) return next(err);
+
+    if (err instanceof multer.MulterError) {
+        const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File too large' : `Upload error: ${err.message}`;
+        return res.status(400).json({ error: msg });
+    }
+    if (err && err.message && err.message.startsWith('File type not allowed')) {
+        return res.status(400).json({ error: err.message });
+    }
+    if (err && err.message === 'Not allowed by CORS') {
+        return res.status(403).json({ error: err.message });
+    }
+
+    logger.error('unhandled error', { error: err });
+    res.status(500).json({ error: 'Internal server error' });
+});
+
+// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+app.listen(config.port, () => {
+    logger.info('server started', {
+        port: config.port,
+        providers: registry.availableProviders().map((p) => p.id),
+    });
 });
+
+module.exports = app;

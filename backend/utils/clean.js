@@ -97,7 +97,7 @@ function extractJobDetails(jobDescription) {
                 lower.includes('organization') ||
                 (line.length < 50 && /^[A-Z][a-zA-Z\s&.,Inc-]+$/.test(line.trim())))
         ) {
-            company = line.trim().split(/[:\-]/)[0].trim();
+            company = line.trim().split(/[:-]/)[0].trim();
         }
 
         if (
@@ -110,7 +110,7 @@ function extractJobDetails(jobDescription) {
                     lower.includes('developer')) &&
                     line.length < 80))
         ) {
-            position = line.trim().split(/[:\-]/)[0].trim();
+            position = line.trim().split(/[:-]/)[0].trim();
         }
 
         if (company && position) break;
@@ -142,6 +142,7 @@ function getTodayDate() {
 function sanitizeFilename(str) {
     return String(str)
         .replace(/[^\x20-\x7E]/g, '')
+        // eslint-disable-next-line no-control-regex -- intentionally strip control chars from filenames
         .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
         .replace(/["\\]/g, '')
         .trim()

@@ -1,7 +1,8 @@
 'use strict';
 
 const { randomUUID } = require('crypto');
-const { getDb, upsertJob, deleteJob, loadPendingJobs } = require('./db');
+const { upsertJob, deleteJob, loadPendingJobs } = require('./db');
+const config = require('../../config');
 
 /**
  * In-memory async job queue with SQLite persistence.
@@ -19,7 +20,7 @@ const jobs = new Map();
 // Startup recovery: restore non-terminal jobs from SQLite
 // ---------------------------------------------------------------------------
 (function recoverJobsFromDb() {
-    const pending = loadPendingJobs(getDb());
+    const pending = loadPendingJobs();
     for (const row of pending) {
         const now = Date.now();
         const job = {
@@ -32,7 +33,7 @@ const jobs = new Map();
         // Restore to in-memory map so callers polling the job get a terminal state
         jobs.set(row.id, job);
         // Persist the failed state back to SQLite
-        upsertJob(getDb()).run({
+        upsertJob({
             id: row.id,
             status: job.status,
             result: null,
@@ -55,7 +56,7 @@ const jobs = new Map();
  * @param {{ status, result, error, createdAt, progress }} job
  */
 function persistJob(jobId, job) {
-    upsertJob(getDb()).run({
+    upsertJob({
         id: jobId,
         status: job.status,
         result: job.result != null ? JSON.stringify(job.result) : null,
@@ -142,16 +143,15 @@ function getJob(jobId) {
  * Remove jobs older than 1 hour.
  */
 function cleanupOldJobs() {
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    const cutoff = Date.now() - config.queue.jobTtlMs;
     for (const [id, job] of jobs.entries()) {
-        if (job.createdAt < oneHourAgo) {
+        if (job.createdAt < cutoff) {
             jobs.delete(id);
-            deleteJob(getDb()).run(id);
+            deleteJob(id);
         }
     }
 }
 
-// Run cleanup every 5 minutes
-setInterval(cleanupOldJobs, 5 * 60 * 1000).unref();
+setInterval(cleanupOldJobs, config.queue.cleanupIntervalMs).unref();
 
 module.exports = { enqueue, getJob, cleanupOldJobs, jobs };

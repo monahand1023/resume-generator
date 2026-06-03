@@ -3,23 +3,15 @@
 const express = require('express');
 const router = express.Router();
 
+const config = require('../config');
+const logger = require('../utils/logger');
 const { scrapeJobDescription, parseResumeFile } = require('../utils/scraper');
+const { validateJobUrl } = require('../utils/ssrf');
 const { extractNameFromResume, extractJobDetails, sanitizeFilename } = require('../utils/clean');
-const { customizeWithOpenAI } = require('../services/ai/openai');
-const { customizeWithGemini } = require('../services/ai/gemini');
-const { customizeWithClaude } = require('../services/ai/claude');
+const registry = require('../services/ai');
 const { createStyledPDF } = require('../services/document/pdf');
 const { createWordDoc } = require('../services/document/docx');
 const { enqueue, getJob } = require('../services/queue/jobQueue');
-
-function validateApiKeyFormat(provider, apiKey) {
-    const trimmed = (apiKey || '').trim();
-    if (!trimmed) return 'API key is required';
-    if (provider === 'openai' && !trimmed.startsWith('sk-')) return 'OpenAI API keys must start with "sk-"';
-    if (provider === 'claude' && !trimmed.startsWith('sk-ant-')) return 'Anthropic API keys must start with "sk-ant-"';
-    if (provider === 'gemini' && !trimmed.startsWith('AIza')) return 'Gemini API keys must start with "AIza"';
-    return null;
-}
 
 // Magic-byte lookup (must match the multer guard in server.js)
 const ALLOWED_MAGIC_BYTES = {
@@ -32,22 +24,40 @@ function checkMagicBytes(buffer, type) {
 }
 
 /**
+ * GET /api/providers
+ *
+ * Lists AI providers and their availability so the frontend can render only the
+ * providers this server supports (e.g. Bedrock appears only when AWS is set up).
+ */
+router.get('/providers', (req, res) => {
+    res.json({ providers: registry.describeProviders() });
+});
+
+/**
  * POST /api/customize-resume
  *
  * Body (multipart/form-data):
  *   resume    – PDF or DOCX file
  *   jobUrl    – URL of the job posting
- *   apiKey    – API key for the chosen AI provider
- *   provider  – "openai" | "gemini" | "claude"
+ *   apiKey    – API key for the chosen AI provider (omitted for server-credential providers)
+ *   provider  – provider id, e.g. "openai" | "gemini" | "claude" | "bedrock"
  *
- * Response (JSON):
- *   { resume, coverLetter, changes, metadata: { name, company, position } }
+ * Response: { jobId, status } — poll GET /api/job/:jobId(/stream) for the result.
  */
-router.post('/customize-resume', (req, res) => {
+router.post('/customize-resume', async (req, res) => {
     const { jobUrl, apiKey, provider } = req.body;
     const resume = req.file?.buffer;
 
-    if (!jobUrl || !apiKey || !resume || !provider) {
+    const descriptor = registry.getProvider(provider);
+    if (!descriptor) {
+        return res.status(400).json({ error: 'Invalid provider' });
+    }
+    if (!descriptor.isAvailable()) {
+        return res.status(400).json({ error: `Provider "${provider}" is not available on this server` });
+    }
+
+    const needsKey = !descriptor.usesServerCredentials;
+    if (!jobUrl || !resume || (needsKey && !apiKey)) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -58,33 +68,40 @@ router.post('/customize-resume', (req, res) => {
         return res.status(400).json({ error: 'Invalid file format. Only PDF and DOCX files are accepted.' });
     }
 
-    const providerMap = {
-        openai: customizeWithOpenAI,
-        gemini: customizeWithGemini,
-        claude: customizeWithClaude,
-    };
-
-    const customizeFunction = providerMap[provider];
-    if (!customizeFunction) {
-        return res.status(400).json({ error: 'Invalid provider' });
+    if (typeof jobUrl !== 'string' || jobUrl.length > config.maxJobUrlLength) {
+        return res.status(400).json({ error: 'Job URL is missing or too long' });
     }
 
-    const keyFormatError = validateApiKeyFormat(provider, apiKey);
-    if (keyFormatError) {
-        return res.status(400).json({ error: keyFormatError });
+    const keyError = registry.validateKey(provider, apiKey);
+    if (keyError) {
+        return res.status(400).json({ error: keyError });
+    }
+
+    // Reject private/reserved URLs up front (SSRF) so the caller gets a 400
+    // rather than a failed job later.
+    try {
+        await validateJobUrl(jobUrl);
+    } catch (err) {
+        return res.status(400).json({ error: `Invalid job URL: ${err.message}` });
     }
 
     const jobId = enqueue(async () => {
-        const jobDescription = await scrapeJobDescription(jobUrl);
-        const resumeText = await parseResumeFile(resume);
+        const rawJobDescription = await scrapeJobDescription(jobUrl);
+        const jobDescription = rawJobDescription.slice(0, config.jdMaxLength);
+
+        let resumeText = await parseResumeFile(resume);
+        if (resumeText.length > config.maxResumeChars) {
+            logger.warn('resume text truncated', { length: resumeText.length, cap: config.maxResumeChars });
+            resumeText = resumeText.slice(0, config.maxResumeChars);
+        }
 
         const name = extractNameFromResume(resumeText);
         const jobDetails = extractJobDetails(jobDescription);
 
         const [customizedResume, coverLetter, changes] = await Promise.all([
-            customizeFunction(resumeText, jobDescription, apiKey, 'resume'),
-            customizeFunction(resumeText, jobDescription, apiKey, 'cover_letter'),
-            customizeFunction(resumeText, jobDescription, apiKey, 'changes'),
+            descriptor.customize({ resumeText, jobDescription, apiKey, type: 'resume' }),
+            descriptor.customize({ resumeText, jobDescription, apiKey, type: 'cover_letter' }),
+            descriptor.customize({ resumeText, jobDescription, apiKey, type: 'changes' }),
         ]);
 
         return {
@@ -121,7 +138,7 @@ router.get('/job/:jobId', (req, res) => {
  * GET /api/job/:jobId/stream
  *
  * Server-Sent Events endpoint. Streams job state until the job reaches a
- * terminal state (completed | failed) or 120 seconds elapse.
+ * terminal state (completed | failed) or the configured stream timeout elapses.
  *
  * Event payload: JSON with { status, result, error, progress }
  */
@@ -161,12 +178,16 @@ router.get('/job/:jobId/stream', (req, res) => {
 
     let interval = null;
 
-    // Maximum stream duration: 120 seconds
     const timeout = setTimeout(() => {
         if (interval) clearInterval(interval);
-        sendEvent({ status: 'failed', result: null, error: 'Stream timeout: job did not complete within 120 seconds', progress: 0 });
+        sendEvent({
+            status: 'failed',
+            result: null,
+            error: `Stream timeout: job did not complete within ${Math.round(config.queue.streamTimeoutMs / 1000)} seconds`,
+            progress: 0,
+        });
         res.end();
-    }, 120_000);
+    }, config.queue.streamTimeoutMs);
 
     interval = setInterval(() => {
         if (job.status === 'completed' || job.status === 'failed') {
@@ -231,7 +252,7 @@ router.post('/format-document', async (req, res) => {
         );
         res.send(buffer);
     } catch (error) {
-        console.error('Error formatting document:', error);
+        logger.error('Error formatting document', { error });
         res.status(500).json({ error: 'Failed to format document' });
     }
 });
