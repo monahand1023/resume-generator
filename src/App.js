@@ -1,20 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { Upload, Link, Key, FileText, Loader2, Eye, EyeOff, ChevronDown, ChevronUp, Clock, RefreshCw, AlertCircle, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Upload, Link, Key, FileText, Loader2, ChevronDown, ChevronUp, Clock, Trash2 } from 'lucide-react';
 import DownloadSection from './components/DownloadSection';
 import ChangesSection from './components/ChangesSection';
+import ApiKeyInput from './components/ApiKeyInput';
+import ProviderErrorCard from './components/ProviderErrorCard';
+import { PROVIDERS, isKeyValid } from './config/providers';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3000';
 
+// Purge-safe column classes (built statically so a future compiled Tailwind
+// build keeps them).
+const MD_GRID_COLS = { 1: 'md:grid-cols-1', 2: 'md:grid-cols-2', 3: 'md:grid-cols-3', 4: 'md:grid-cols-4' };
+const gridCols = (n) => `grid grid-cols-1 ${MD_GRID_COLS[n] || 'md:grid-cols-3'} gap-4`;
+
+// Build a per-provider state object, e.g. { openai: false, gemini: false, ... }.
+const perProvider = (value) => Object.fromEntries(PROVIDERS.map((p) => [p.id, value]));
+
 function App() {
-    const [openaiKey, setOpenaiKey] = useState('');
-    const [geminiKey, setGeminiKey] = useState('');
-    const [claudeKey, setClaudeKey] = useState('');
+    const [keys, setKeys] = useState({});
     const [jobUrl, setJobUrl] = useState('');
     const [resume, setResume] = useState(null);
-    const [loading, setLoading] = useState({ openai: false, gemini: false, claude: false });
-    const [results, setResults] = useState({ openai: null, gemini: null, claude: null });
-    const [providerErrors, setProviderErrors] = useState({ openai: null, gemini: null, claude: null });
+    const [loading, setLoading] = useState(() => perProvider(false));
+    const [results, setResults] = useState(() => perProvider(null));
+    const [providerErrors, setProviderErrors] = useState(() => perProvider(null));
+    const [progress, setProgress] = useState(() => perProvider(0));
+    const [showKeys, setShowKeys] = useState(() => perProvider(false));
     const [error, setError] = useState('');
+    const [serverProviders, setServerProviders] = useState(null);
     const [history, setHistory] = useState(() => {
         try {
             return JSON.parse(localStorage.getItem('resume_history') || '[]');
@@ -24,54 +36,39 @@ function App() {
     });
     const [showHistory, setShowHistory] = useState(false);
     const [dragActive, setDragActive] = useState(false);
-    const [showKeys, setShowKeys] = useState({ openai: false, gemini: false, claude: false });
 
-    // Load API keys from localStorage on component mount
+    const eventSources = React.useRef({});
+
+    // Load saved API keys from localStorage on mount.
     useEffect(() => {
-        const savedOpenaiKey = localStorage.getItem('openai_api_key');
-        const savedGeminiKey = localStorage.getItem('gemini_api_key');
-        const savedClaudeKey = localStorage.getItem('claude_api_key');
-        if (savedOpenaiKey) setOpenaiKey(savedOpenaiKey);
-        if (savedGeminiKey) setGeminiKey(savedGeminiKey);
-        if (savedClaudeKey) setClaudeKey(savedClaudeKey);
+        const loaded = {};
+        PROVIDERS.forEach((p) => {
+            if (p.usesServerCredentials) return;
+            const saved = localStorage.getItem(`${p.id}_api_key`);
+            if (saved) loaded[p.id] = saved;
+        });
+        setKeys((prev) => ({ ...prev, ...loaded }));
     }, []);
 
-    // Save API keys to localStorage whenever they change
+    // Ask the server which providers it actually supports (e.g. Bedrock only
+    // when AWS is configured). Falls back to the user-key providers if the
+    // backend is unreachable.
     useEffect(() => {
-        if (openaiKey) {
-            localStorage.setItem('openai_api_key', openaiKey);
-        } else {
-            localStorage.removeItem('openai_api_key');
-        }
-    }, [openaiKey]);
+        fetch(`${BACKEND_URL}/api/providers`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+                if (data && Array.isArray(data.providers)) setServerProviders(data.providers);
+            })
+            .catch(() => {
+                /* backend may be down — keep defaults */
+            });
+    }, []);
 
+    // Persist results to history whenever a provider result arrives.
     useEffect(() => {
-        if (geminiKey) {
-            localStorage.setItem('gemini_api_key', geminiKey);
-        } else {
-            localStorage.removeItem('gemini_api_key');
-        }
-    }, [geminiKey]);
-
-    useEffect(() => {
-        if (claudeKey) {
-            localStorage.setItem('claude_api_key', claudeKey);
-        } else {
-            localStorage.removeItem('claude_api_key');
-        }
-    }, [claudeKey]);
-
-    // Persist results to history whenever a provider result arrives
-    useEffect(() => {
-        const hasResult = results.openai || results.gemini || results.claude;
-        if (!hasResult) return;
-
-        setHistory(prev => {
-            const entry = {
-                timestamp: new Date().toISOString(),
-                jobUrl,
-                results,
-            };
+        if (!Object.values(results).some(Boolean)) return;
+        setHistory((prev) => {
+            const entry = { timestamp: new Date().toISOString(), jobUrl, results };
             const updated = [entry, ...prev].slice(0, 10);
             try {
                 localStorage.setItem('resume_history', JSON.stringify(updated));
@@ -80,37 +77,55 @@ function App() {
             }
             return updated;
         });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [results]);
+
+    // Close all EventSource connections on unmount.
+    useEffect(() => {
+        const sources = eventSources.current; // stable object; snapshot for the cleanup closure
+        return () => {
+            Object.values(sources).forEach((es) => es.close());
+        };
+    }, []);
+
+    const setKey = (id, value) => {
+        setKeys((prev) => ({ ...prev, [id]: value }));
+        if (value) {
+            localStorage.setItem(`${id}_api_key`, value);
+        } else {
+            localStorage.removeItem(`${id}_api_key`);
+        }
+    };
+
+    const toggleShowKey = (id) => setShowKeys((prev) => ({ ...prev, [id]: !prev[id] }));
+
+    // Providers to show: those the server reports available, or (before that
+    // response) the ones that don't depend on server credentials.
+    const visibleProviders = useMemo(() => {
+        return PROVIDERS.filter((p) => {
+            if (serverProviders) {
+                const match = serverProviders.find((sp) => sp.id === p.id);
+                return match ? match.available : false;
+            }
+            return !p.usesServerCredentials;
+        });
+    }, [serverProviders]);
+
+    const userKeyProviders = visibleProviders.filter((p) => !p.usesServerCredentials);
+    const canSubmit = Boolean(jobUrl?.trim() && resume);
+    const isReady = (provider) => provider.usesServerCredentials || isKeyValid(provider, keys[provider.id]);
 
     const handleDrag = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (e.type === "dragenter" || e.type === "dragover") {
+        if (e.type === 'dragenter' || e.type === 'dragover') {
             setDragActive(true);
-        } else if (e.type === "dragleave") {
+        } else if (e.type === 'dragleave') {
             setDragActive(false);
         }
     };
 
-    const handleDrop = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragActive(false);
-
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            const file = e.dataTransfer.files[0];
-            if (file.type === 'application/pdf' || file.type.includes('document')) {
-                setResume(file);
-                setError('');
-            } else {
-                setError('Please upload a PDF or Word document');
-            }
-        }
-    };
-
-    const handleFileUpload = (e) => {
-        const file = e.target.files[0];
+    const acceptFile = (file) => {
         if (file && (file.type === 'application/pdf' || file.type.includes('document'))) {
             setResume(file);
             setError('');
@@ -119,44 +134,59 @@ function App() {
         }
     };
 
-    // Track active EventSource connections so we can close them on unmount or re-submission
-    const eventSources = React.useRef({});
-    // Track per-provider progress (0-100)
-    const [progress, setProgress] = useState({ openai: 0, gemini: 0, claude: 0 });
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) acceptFile(e.dataTransfer.files[0]);
+    };
 
-    // Close all EventSource connections on unmount
-    useEffect(() => {
-        return () => {
-            Object.values(eventSources.current).forEach(es => es.close());
-        };
-    }, []);
+    const handleFileUpload = (e) => acceptFile(e.target.files[0]);
 
-    const handleSubmit = async (provider) => {
-        const apiKeys = { openai: openaiKey, gemini: geminiKey, claude: claudeKey };
-        const apiKey = apiKeys[provider];
+    const personalizeError = (label, rawMessage) => {
+        const message = rawMessage || 'Something went wrong';
+        const lower = message.toLowerCase();
+        if (lower.includes('quota') || lower.includes('429')) {
+            return `${label} API quota exceeded. Please check your billing or try again later.`;
+        }
+        if (lower.includes('unauthorized') || lower.includes('401')) {
+            return `Invalid ${label} API key. Please check your key and try again.`;
+        }
+        if (lower.includes('403') || lower.includes('forbidden')) {
+            return `${label} API access denied. Check your permissions.`;
+        }
+        if (lower.includes('api error')) {
+            return `${label}: ${message}`;
+        }
+        return message;
+    };
 
-        if (!apiKey || !jobUrl || !resume) {
+    const handleSubmit = async (providerId) => {
+        const provider = PROVIDERS.find((p) => p.id === providerId);
+        const apiKey = (keys[providerId] || '').trim();
+        const needsKey = !provider.usesServerCredentials;
+
+        if ((needsKey && !apiKey) || !jobUrl || !resume) {
             setError('Please fill in all required fields');
             return;
         }
 
-        // Close any existing SSE connection for this provider
-        if (eventSources.current[provider]) {
-            eventSources.current[provider].close();
-            delete eventSources.current[provider];
+        if (eventSources.current[providerId]) {
+            eventSources.current[providerId].close();
+            delete eventSources.current[providerId];
         }
 
-        setLoading(prev => ({ ...prev, [provider]: true }));
-        setProgress(prev => ({ ...prev, [provider]: 0 }));
-        setProviderErrors(prev => ({ ...prev, [provider]: null }));
+        setLoading((prev) => ({ ...prev, [providerId]: true }));
+        setProgress((prev) => ({ ...prev, [providerId]: 0 }));
+        setProviderErrors((prev) => ({ ...prev, [providerId]: null }));
         setError('');
 
         try {
             const formData = new FormData();
             formData.append('resume', resume);
             formData.append('jobUrl', jobUrl);
-            formData.append('apiKey', apiKey);
-            formData.append('provider', provider);
+            formData.append('provider', providerId);
+            if (apiKey) formData.append('apiKey', apiKey);
 
             const response = await fetch(`${BACKEND_URL}/api/customize-resume`, {
                 method: 'POST',
@@ -168,7 +198,7 @@ function App() {
                 try {
                     const errorData = await response.json();
                     serverError = errorData.error || serverError;
-                } catch (parseError) {
+                } catch (_parseError) {
                     serverError = response.statusText || serverError;
                 }
                 throw new Error(serverError);
@@ -176,126 +206,81 @@ function App() {
 
             const { jobId } = await response.json();
 
-            // Open SSE stream for pushed job updates
             const es = new EventSource(`${BACKEND_URL}/api/job/${jobId}/stream`);
-            eventSources.current[provider] = es;
+            eventSources.current[providerId] = es;
 
             es.onmessage = (event) => {
                 let job;
                 try {
                     job = JSON.parse(event.data);
                 } catch (_) {
-                    return; // ignore unparseable frames
+                    return;
                 }
 
-                // Update progress bar
                 if (typeof job.progress === 'number') {
-                    setProgress(prev => ({ ...prev, [provider]: job.progress }));
+                    setProgress((prev) => ({ ...prev, [providerId]: job.progress }));
                 }
 
                 if (job.status === 'completed') {
                     es.close();
-                    delete eventSources.current[provider];
-                    setResults(prev => ({ ...prev, [provider]: job.result }));
-                    setLoading(prev => ({ ...prev, [provider]: false }));
+                    delete eventSources.current[providerId];
+                    setResults((prev) => ({ ...prev, [providerId]: job.result }));
+                    setLoading((prev) => ({ ...prev, [providerId]: false }));
                 } else if (job.status === 'failed') {
                     es.close();
-                    delete eventSources.current[provider];
-                    setLoading(prev => ({ ...prev, [provider]: false }));
-                    let errorMessage = job.error || 'Something went wrong';
-                    const lowerError = errorMessage.toLowerCase();
-                    if (lowerError.includes('quota') || lowerError.includes('429')) {
-                        errorMessage = `${provider} API quota exceeded. Please check your billing or try again later.`;
-                    } else if (lowerError.includes('unauthorized') || lowerError.includes('401')) {
-                        errorMessage = `Invalid ${provider} API key. Please check your key and try again.`;
-                    } else if (lowerError.includes('403') || lowerError.includes('forbidden')) {
-                        errorMessage = `${provider} API access denied. Check your permissions.`;
-                    }
-                    setProviderErrors(prev => ({ ...prev, [provider]: errorMessage }));
+                    delete eventSources.current[providerId];
+                    setLoading((prev) => ({ ...prev, [providerId]: false }));
+                    setProviderErrors((prev) => ({
+                        ...prev,
+                        [providerId]: personalizeError(provider.label, job.error),
+                    }));
                 }
                 // status 'pending' or 'processing': keep stream open
             };
 
             es.onerror = () => {
                 es.close();
-                delete eventSources.current[provider];
-                setLoading(prev => ({ ...prev, [provider]: false }));
-                setProviderErrors(prev => ({ ...prev, [provider]: 'Connection lost while waiting for job to complete. Please try again.' }));
+                delete eventSources.current[providerId];
+                setLoading((prev) => ({ ...prev, [providerId]: false }));
+                setProviderErrors((prev) => ({
+                    ...prev,
+                    [providerId]: 'Connection lost while waiting for job to complete. Please try again.',
+                }));
             };
-
         } catch (err) {
-            let errorMessage = err.message || 'Something went wrong';
-
-            // Handle connection errors (server not running)
+            let errorMessage;
             if (err.message && err.message.includes('fetch')) {
-                errorMessage = "The backend server isn't running. Did you forget to start it? Run 'node server.js' in the backend directory.";
+                errorMessage =
+                    "The backend server isn't running. Did you forget to start it? Run 'node server.js' in the backend directory.";
             } else {
-                const lowerError = errorMessage.toLowerCase();
-                if (lowerError.includes('quota') || lowerError.includes('429')) {
-                    errorMessage = `${provider} API quota exceeded. Please check your billing or try again later.`;
-                } else if (lowerError.includes('unauthorized') || lowerError.includes('401')) {
-                    errorMessage = `Invalid ${provider} API key. Please check your key and try again.`;
-                } else if (lowerError.includes('403') || lowerError.includes('forbidden')) {
-                    errorMessage = `${provider} API access denied. Check your permissions.`;
-                } else if (lowerError.includes('api error')) {
-                    errorMessage = `${provider}: ${errorMessage}`;
-                }
+                errorMessage = personalizeError(provider.label, err.message);
             }
-
-            setProviderErrors(prev => ({ ...prev, [provider]: errorMessage }));
+            setProviderErrors((prev) => ({ ...prev, [providerId]: errorMessage }));
             setError(errorMessage);
-            setLoading(prev => ({ ...prev, [provider]: false }));
+            setLoading((prev) => ({ ...prev, [providerId]: false }));
         }
     };
 
     const generateFilename = (baseType, metadata, format) => {
         if (!metadata) return `${baseType}.${format}`;
-
         const { name, company, position } = metadata;
-        const cleanName = (name || 'Resume').replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
-        const cleanCompany = (company || 'Company').replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
-        const cleanPosition = (position || 'Position').replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
-
-        if (baseType === 'resume') {
-            return `${cleanName}_Resume_${cleanCompany}_${cleanPosition}.${format}`;
-        } else {
-            return `${cleanName}_CoverLetter_${cleanCompany}_${cleanPosition}.${format}`;
-        }
-    };
-
-    const downloadFile = (content, baseFilename, format = 'txt', metadata = null) => {
-        if (format === 'pdf' || format === 'docx') {
-            downloadFormattedFile(content, baseFilename, format, metadata);
-            return;
-        }
-
-        const filename = generateFilename(baseFilename, metadata, format);
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
+        const clean = (v, fallback) => (v || fallback).replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+        const cleanName = clean(name, 'Resume');
+        const cleanCompany = clean(company, 'Company');
+        const cleanPosition = clean(position, 'Position');
+        const kind = baseType === 'resume' ? 'Resume' : 'CoverLetter';
+        return `${cleanName}_${kind}_${cleanCompany}_${cleanPosition}.${format}`;
     };
 
     const downloadFormattedFile = async (content, baseFilename, format, metadata) => {
         try {
             const filename = generateFilename(baseFilename, metadata, format);
-
             const response = await fetch(`${BACKEND_URL}/api/format-document`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    content,
-                    format,
-                    filename: filename.replace(`.${format}`, ''),
-                    metadata
-                })
+                body: JSON.stringify({ content, format, filename: filename.replace(`.${format}`, ''), metadata }),
             });
-
             if (!response.ok) throw new Error('Failed to format document');
-
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -308,65 +293,60 @@ function App() {
         }
     };
 
-    // Helper function to clean markdown formatting
+    const downloadFile = (content, baseFilename, format = 'txt', metadata = null) => {
+        if (format === 'pdf' || format === 'docx') {
+            downloadFormattedFile(content, baseFilename, format, metadata);
+            return;
+        }
+        const filename = generateFilename(baseFilename, metadata, format);
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     const cleanMarkdown = (text) => {
         if (!text) return text;
         return text
-            .replace(/\*\*/g, '')  // Remove **bold**
-            .replace(/\*/g, '')    // Remove *italic*
-            .replace(/_{2,}/g, '') // Remove multiple underscores
-            .replace(/^_+|_+$/gm, '') // Remove leading/trailing underscores
-            .replace(/^#+\s*/gm, '') // Remove # headers
-            .replace(/`{1,3}/g, '') // Remove code backticks
+            .replace(/\*\*/g, '')
+            .replace(/\*/g, '')
+            .replace(/_{2,}/g, '')
+            .replace(/^_+|_+$/gm, '')
+            .replace(/^#+\s*/gm, '')
+            .replace(/`{1,3}/g, '')
             .trim();
     };
 
-    // Helper function to parse structured changes data
     const parseChangesData = (changesText) => {
         if (!changesText) return null;
-
-        const lines = changesText.split('\n').filter(line => line.trim());
+        const lines = changesText.split('\n').filter((line) => line.trim());
         let metrics = '';
         const keyChanges = [];
         let currentChange = null;
 
         for (const line of lines) {
             const trimmed = line.trim();
-
             if (trimmed.includes('METRICS:')) {
                 metrics = cleanMarkdown(trimmed.replace('METRICS:', '').trim());
             } else if (trimmed.includes('CHANGE:')) {
-                if (currentChange) {
-                    keyChanges.push(currentChange);
-                }
-                currentChange = {
-                    title: cleanMarkdown(trimmed.replace('CHANGE:', '').trim()),
-                    before: '',
-                    after: ''
-                };
+                if (currentChange) keyChanges.push(currentChange);
+                currentChange = { title: cleanMarkdown(trimmed.replace('CHANGE:', '').trim()), before: '', after: '' };
             } else if (trimmed.includes('BEFORE:')) {
-                if (currentChange) {
-                    currentChange.before = cleanMarkdown(trimmed.replace('BEFORE:', '').trim());
-                }
+                if (currentChange) currentChange.before = cleanMarkdown(trimmed.replace('BEFORE:', '').trim());
             } else if (trimmed.includes('AFTER:')) {
-                if (currentChange) {
-                    currentChange.after = cleanMarkdown(trimmed.replace('AFTER:', '').trim());
-                }
+                if (currentChange) currentChange.after = cleanMarkdown(trimmed.replace('AFTER:', '').trim());
             }
         }
-
-        if (currentChange) {
-            keyChanges.push(currentChange);
-        }
-
+        if (currentChange) keyChanges.push(currentChange);
         return { metrics, keyChanges };
     };
 
-    // Temporary simple validation for debugging
-    const hasOpenaiKey = Boolean(openaiKey?.trim());
-    const hasGeminiKey = Boolean(geminiKey?.trim());
-    const hasClaudeKey = Boolean(claudeKey?.trim());
-    const canSubmit = Boolean(jobUrl?.trim() && resume);
+    const hasAnyResult = Object.values(results).some(Boolean);
+    const hasAnyError = Object.values(providerErrors).some(Boolean);
+    const anyLoading = visibleProviders.some((p) => loading[p.id]);
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
@@ -378,128 +358,34 @@ function App() {
 
                 <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
                     <div className="space-y-6">
-                        {/* API Keys Section - Always Visible */}
+                        {/* API Keys Section */}
                         <div className="border-b pb-6">
                             <h2 className="flex items-center text-lg font-semibold text-gray-900 mb-4">
                                 <Key className="w-5 h-5 mr-2" />
                                 API Configuration
                             </h2>
-
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                    <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                                        OpenAI API Key
-                                        {hasOpenaiKey && <span className="ml-2 text-green-600 text-xs">✓ Valid</span>}
-                                        {openaiKey?.trim() && !hasOpenaiKey && <span className="ml-2 text-red-600 text-xs">✗ Invalid format</span>}
-                                    </label>
-                                    <a
-                                        href="https://platform.openai.com/api-keys"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-xs text-blue-600 hover:text-blue-800 underline mb-2 block"
-                                    >
-                                        How To Get an OpenAI API Key
-                                    </a>
-                                    <div className="relative">
-                                        <input
-                                            type={showKeys.openai ? "text" : "password"}
-                                            value={openaiKey}
-                                            onChange={(e) => setOpenaiKey(e.target.value)}
-                                            placeholder="sk-..."
-                                            className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                                openaiKey?.trim() && !hasOpenaiKey
-                                                    ? 'border-red-300 bg-red-50'
-                                                    : hasOpenaiKey
-                                                        ? 'border-green-300 bg-green-50'
-                                                        : 'border-gray-300'
-                                            }`}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowKeys(prev => ({ ...prev, openai: !prev.openai }))}
-                                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                        >
-                                            {showKeys.openai ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                                        Gemini API Key
-                                        {hasGeminiKey && <span className="ml-2 text-green-600 text-xs">✓ Valid</span>}
-                                        {geminiKey?.trim() && !hasGeminiKey && <span className="ml-2 text-red-600 text-xs">✗ Invalid format</span>}
-                                    </label>
-                                    <a
-                                        href="https://ai.google.dev/gemini-api/docs/api-key"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-xs text-blue-600 hover:text-blue-800 underline mb-2 block"
-                                    >
-                                        How To Get a Gemini API Key
-                                    </a>
-                                    <div className="relative">
-                                        <input
-                                            type={showKeys.gemini ? "text" : "password"}
-                                            value={geminiKey}
-                                            onChange={(e) => setGeminiKey(e.target.value)}
-                                            placeholder="AI..."
-                                            className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                                geminiKey?.trim() && !hasGeminiKey
-                                                    ? 'border-red-300 bg-red-50'
-                                                    : hasGeminiKey
-                                                        ? 'border-green-300 bg-green-50'
-                                                        : 'border-gray-300'
-                                            }`}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowKeys(prev => ({ ...prev, gemini: !prev.gemini }))}
-                                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                        >
-                                            {showKeys.gemini ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                                        Claude API Key
-                                        {hasClaudeKey && <span className="ml-2 text-green-600 text-xs">✓ Valid</span>}
-                                        {claudeKey?.trim() && !hasClaudeKey && <span className="ml-2 text-red-600 text-xs">✗ Invalid format</span>}
-                                    </label>
-                                    <a
-                                        href="https://console.anthropic.com/settings/keys"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-xs text-blue-600 hover:text-blue-800 underline mb-2 block"
-                                    >
-                                        How To Get a Claude API Key
-                                    </a>
-                                    <div className="relative">
-                                        <input
-                                            type={showKeys.claude ? "text" : "password"}
-                                            value={claudeKey}
-                                            onChange={(e) => setClaudeKey(e.target.value)}
-                                            placeholder="sk-ant-..."
-                                            className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                                claudeKey?.trim() && !hasClaudeKey
-                                                    ? 'border-red-300 bg-red-50'
-                                                    : hasClaudeKey
-                                                        ? 'border-green-300 bg-green-50'
-                                                        : 'border-gray-300'
-                                            }`}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowKeys(prev => ({ ...prev, claude: !prev.claude }))}
-                                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                        >
-                                            {showKeys.claude ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                        </button>
-                                    </div>
-                                </div>
+                            <div className={gridCols(userKeyProviders.length)}>
+                                {userKeyProviders.map((provider) => (
+                                    <ApiKeyInput
+                                        key={provider.id}
+                                        provider={provider}
+                                        value={keys[provider.id] || ''}
+                                        onChange={setKey}
+                                        show={showKeys[provider.id]}
+                                        onToggleShow={toggleShowKey}
+                                    />
+                                ))}
                             </div>
+                            {visibleProviders.some((p) => p.usesServerCredentials) && (
+                                <p className="text-xs text-gray-500 mt-3">
+                                    {visibleProviders
+                                        .filter((p) => p.usesServerCredentials)
+                                        .map((p) => p.label)
+                                        .join(', ')}{' '}
+                                    {visibleProviders.filter((p) => p.usesServerCredentials).length === 1 ? 'uses' : 'use'}{' '}
+                                    server-side credentials — no API key needed.
+                                </p>
+                            )}
                         </div>
 
                         {/* Job URL */}
@@ -558,7 +444,7 @@ function App() {
                                     ) : (
                                         <div className="text-gray-500">
                                             <Upload className="w-8 h-8 mx-auto mb-2" />
-                                            <p>Drag & drop your resume or click to upload</p>
+                                            <p>Drag &amp; drop your resume or click to upload</p>
                                             <p className="text-xs mt-1">PDF or Word documents only</p>
                                         </div>
                                     )}
@@ -567,119 +453,64 @@ function App() {
                         </div>
 
                         {error && (
-                            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
-                                {error}
-                            </div>
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">{error}</div>
                         )}
 
                         {/* Action Buttons */}
-                        <div className="grid grid-cols-3 gap-4">
-                            <button
-                                onClick={() => handleSubmit('openai')}
-                                disabled={!hasOpenaiKey || !canSubmit || loading.openai}
-                                className={`w-full font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center ${
-                                    hasOpenaiKey && canSubmit
-                                        ? 'bg-green-600 hover:bg-green-700 text-white'
-                                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                }`}
-                                title={!hasOpenaiKey ? "Enter OpenAI API key" : !canSubmit ? "Add job URL and upload resume" : ""}
-                            >
-                                {loading.openai ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Customizing... (up to 60s)
-                                    </>
-                                ) : (
-                                    <>OpenAI</>
-                                )}
-                            </button>
-
-                            <button
-                                onClick={() => handleSubmit('gemini')}
-                                disabled={!hasGeminiKey || !canSubmit || loading.gemini}
-                                className={`w-full font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center ${
-                                    hasGeminiKey && canSubmit
-                                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                }`}
-                                title={!hasGeminiKey ? "Enter Gemini API key" : !canSubmit ? "Add job URL and upload resume" : ""}
-                            >
-                                {loading.gemini ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Customizing... (up to 60s)
-                                    </>
-                                ) : (
-                                    <>Gemini</>
-                                )}
-                            </button>
-
-                            <button
-                                onClick={() => handleSubmit('claude')}
-                                disabled={!hasClaudeKey || !canSubmit || loading.claude}
-                                className={`w-full font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center ${
-                                    hasClaudeKey && canSubmit
-                                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                }`}
-                                title={!hasClaudeKey ? "Enter Claude API key" : !canSubmit ? "Add job URL and upload resume" : ""}
-                            >
-                                {loading.claude ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Customizing... (up to 60s)
-                                    </>
-                                ) : (
-                                    <>Claude</>
-                                )}
-                            </button>
+                        <div className={gridCols(visibleProviders.length)}>
+                            {visibleProviders.map((provider) => {
+                                const ready = isReady(provider);
+                                const enabled = ready && canSubmit;
+                                return (
+                                    <button
+                                        key={provider.id}
+                                        onClick={() => handleSubmit(provider.id)}
+                                        disabled={!enabled || loading[provider.id]}
+                                        className={`w-full font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center ${
+                                            enabled
+                                                ? `${provider.classes.button} text-white`
+                                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                        }`}
+                                        title={
+                                            !ready
+                                                ? `Enter a valid ${provider.label} API key`
+                                                : !canSubmit
+                                                    ? 'Add job URL and upload resume'
+                                                    : ''
+                                        }
+                                    >
+                                        {loading[provider.id] ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                Customizing... (up to 60s)
+                                            </>
+                                        ) : (
+                                            <>{provider.label}</>
+                                        )}
+                                    </button>
+                                );
+                            })}
                         </div>
 
-                        {/* Progress bars — shown while a provider is loading */}
-                        {(loading.openai || loading.gemini || loading.claude) && (
+                        {/* Progress bars */}
+                        {anyLoading && (
                             <div className="space-y-2">
-                                {loading.openai && (
-                                    <div>
-                                        <div className="flex justify-between text-xs text-gray-500 mb-1">
-                                            <span>OpenAI</span>
-                                            <span>{progress.openai}%</span>
+                                {visibleProviders
+                                    .filter((p) => loading[p.id])
+                                    .map((provider) => (
+                                        <div key={provider.id}>
+                                            <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                                <span>{provider.label}</span>
+                                                <span>{progress[provider.id]}%</span>
+                                            </div>
+                                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                                <div
+                                                    className={`${provider.classes.progress} h-2 rounded-full transition-all duration-300`}
+                                                    style={{ width: `${progress[provider.id]}%` }}
+                                                />
+                                            </div>
                                         </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-2">
-                                            <div
-                                                className="bg-green-500 h-2 rounded-full transition-all duration-300"
-                                                style={{ width: `${progress.openai}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                )}
-                                {loading.gemini && (
-                                    <div>
-                                        <div className="flex justify-between text-xs text-gray-500 mb-1">
-                                            <span>Gemini</span>
-                                            <span>{progress.gemini}%</span>
-                                        </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-2">
-                                            <div
-                                                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                                                style={{ width: `${progress.gemini}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                )}
-                                {loading.claude && (
-                                    <div>
-                                        <div className="flex justify-between text-xs text-gray-500 mb-1">
-                                            <span>Claude</span>
-                                            <span>{progress.claude}%</span>
-                                        </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-2">
-                                            <div
-                                                className="bg-purple-500 h-2 rounded-full transition-all duration-300"
-                                                style={{ width: `${progress.claude}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                )}
+                                    ))}
                             </div>
                         )}
 
@@ -689,15 +520,19 @@ function App() {
                                 <div className="flex items-start">
                                     <div className="flex-shrink-0">
                                         <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                            <path
+                                                fillRule="evenodd"
+                                                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                                                clipRule="evenodd"
+                                            />
                                         </svg>
                                     </div>
                                     <div className="ml-3">
                                         <p className="text-sm">
                                             To generate customized resumes, please:
-                                            {!jobUrl?.trim() && !resume && " add a job URL and upload your resume"}
-                                            {!jobUrl?.trim() && resume && " add a job URL"}
-                                            {jobUrl?.trim() && !resume && " upload your resume"}
+                                            {!jobUrl?.trim() && !resume && ' add a job URL and upload your resume'}
+                                            {!jobUrl?.trim() && resume && ' add a job URL'}
+                                            {jobUrl?.trim() && !resume && ' upload your resume'}
                                         </p>
                                     </div>
                                 </div>
@@ -706,189 +541,70 @@ function App() {
                     </div>
                 </div>
 
-                {/* Download Section - Now above changes */}
-                {(results.openai || results.gemini || results.claude) && (
+                {/* Download Section */}
+                {hasAnyResult && (
                     <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
                         <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Download Your Documents</h2>
                         <div className="space-y-6">
-                            {results.openai && (
-                                <DownloadSection
-                                    title="OpenAI Results"
-                                    results={results.openai}
-                                    downloadFile={downloadFile}
-                                    color="green"
-                                />
-                            )}
-                            {!results.openai && providerErrors.openai && (
-                                <div className="border-l-4 border-red-300 pl-6">
-                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
-                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-semibold text-red-800 mb-1">OpenAI failed</p>
-                                            <p className="text-sm text-red-700">{providerErrors.openai}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => handleSubmit('openai')}
-                                            disabled={loading.openai}
-                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
-                                        >
-                                            <RefreshCw className="w-3.5 h-3.5" />
-                                            Retry
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                            {results.gemini && (
-                                <DownloadSection
-                                    title="Gemini Results"
-                                    results={results.gemini}
-                                    downloadFile={downloadFile}
-                                    color="blue"
-                                />
-                            )}
-                            {!results.gemini && providerErrors.gemini && (
-                                <div className="border-l-4 border-red-300 pl-6">
-                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
-                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-semibold text-red-800 mb-1">Gemini failed</p>
-                                            <p className="text-sm text-red-700">{providerErrors.gemini}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => handleSubmit('gemini')}
-                                            disabled={loading.gemini}
-                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
-                                        >
-                                            <RefreshCw className="w-3.5 h-3.5" />
-                                            Retry
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                            {results.claude && (
-                                <DownloadSection
-                                    title="Claude Results"
-                                    results={results.claude}
-                                    downloadFile={downloadFile}
-                                    color="purple"
-                                />
-                            )}
-                            {!results.claude && providerErrors.claude && (
-                                <div className="border-l-4 border-red-300 pl-6">
-                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
-                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-semibold text-red-800 mb-1">Claude failed</p>
-                                            <p className="text-sm text-red-700">{providerErrors.claude}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => handleSubmit('claude')}
-                                            disabled={loading.claude}
-                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
-                                        >
-                                            <RefreshCw className="w-3.5 h-3.5" />
-                                            Retry
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+                            {PROVIDERS.map((provider) => {
+                                if (results[provider.id]) {
+                                    return (
+                                        <DownloadSection
+                                            key={provider.id}
+                                            title={`${provider.label} Results`}
+                                            results={results[provider.id]}
+                                            downloadFile={downloadFile}
+                                            color={provider.color}
+                                        />
+                                    );
+                                }
+                                if (providerErrors[provider.id]) {
+                                    return (
+                                        <ProviderErrorCard
+                                            key={provider.id}
+                                            provider={provider}
+                                            message={providerErrors[provider.id]}
+                                            onRetry={handleSubmit}
+                                            disabled={loading[provider.id]}
+                                        />
+                                    );
+                                }
+                                return null;
+                            })}
                         </div>
                     </div>
                 )}
 
-                {/* Provider error cards when no results have loaded at all yet */}
-                {!(results.openai || results.gemini || results.claude) && (providerErrors.openai || providerErrors.gemini || providerErrors.claude) && (
+                {/* Error-only section when nothing has succeeded yet */}
+                {!hasAnyResult && hasAnyError && (
                     <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
                         <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Results</h2>
                         <div className="space-y-4">
-                            {providerErrors.openai && (
-                                <div className="border-l-4 border-red-300 pl-6">
-                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
-                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-semibold text-red-800 mb-1">OpenAI failed</p>
-                                            <p className="text-sm text-red-700">{providerErrors.openai}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => handleSubmit('openai')}
-                                            disabled={loading.openai}
-                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
-                                        >
-                                            <RefreshCw className="w-3.5 h-3.5" />
-                                            Retry
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                            {providerErrors.gemini && (
-                                <div className="border-l-4 border-red-300 pl-6">
-                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
-                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-semibold text-red-800 mb-1">Gemini failed</p>
-                                            <p className="text-sm text-red-700">{providerErrors.gemini}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => handleSubmit('gemini')}
-                                            disabled={loading.gemini}
-                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
-                                        >
-                                            <RefreshCw className="w-3.5 h-3.5" />
-                                            Retry
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                            {providerErrors.claude && (
-                                <div className="border-l-4 border-red-300 pl-6">
-                                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
-                                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-semibold text-red-800 mb-1">Claude failed</p>
-                                            <p className="text-sm text-red-700">{providerErrors.claude}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => handleSubmit('claude')}
-                                            disabled={loading.claude}
-                                            className="flex items-center gap-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
-                                        >
-                                            <RefreshCw className="w-3.5 h-3.5" />
-                                            Retry
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+                            {PROVIDERS.filter((p) => providerErrors[p.id]).map((provider) => (
+                                <ProviderErrorCard
+                                    key={provider.id}
+                                    provider={provider}
+                                    message={providerErrors[provider.id]}
+                                    onRetry={handleSubmit}
+                                    disabled={loading[provider.id]}
+                                />
+                            ))}
                         </div>
                     </div>
                 )}
 
-                {/* Changes Analysis Section */}
-                {(results.openai || results.gemini || results.claude) && (
+                {/* Changes Analysis */}
+                {hasAnyResult && (
                     <div className="space-y-8">
-                        {results.openai && (
+                        {PROVIDERS.filter((p) => results[p.id]).map((provider) => (
                             <ChangesSection
-                                title="OpenAI Analysis"
-                                results={results.openai}
+                                key={provider.id}
+                                title={`${provider.label} Analysis`}
+                                results={results[provider.id]}
                                 parseChangesData={parseChangesData}
-                                color="green"
+                                color={provider.color}
                             />
-                        )}
-                        {results.gemini && (
-                            <ChangesSection
-                                title="Gemini Analysis"
-                                results={results.gemini}
-                                parseChangesData={parseChangesData}
-                                color="blue"
-                            />
-                        )}
-                        {results.claude && (
-                            <ChangesSection
-                                title="Claude Analysis"
-                                results={results.claude}
-                                parseChangesData={parseChangesData}
-                                color="purple"
-                            />
-                        )}
+                        ))}
                     </div>
                 )}
 
@@ -897,13 +613,11 @@ function App() {
                     <div className="bg-white rounded-xl shadow-lg p-6 mt-8">
                         <button
                             className="w-full flex items-center justify-between text-left"
-                            onClick={() => setShowHistory(prev => !prev)}
+                            onClick={() => setShowHistory((prev) => !prev)}
                         >
                             <div className="flex items-center gap-2">
                                 <Clock className="w-5 h-5 text-gray-500" />
-                                <span className="text-lg font-semibold text-gray-900">
-                                    Previous Results
-                                </span>
+                                <span className="text-lg font-semibold text-gray-900">Previous Results</span>
                                 <span className="text-sm text-gray-500 font-normal">({history.length})</span>
                             </div>
                             {showHistory ? (
@@ -931,11 +645,19 @@ function App() {
                                 <div className="space-y-2">
                                     {history.map((entry, idx) => {
                                         const date = new Date(entry.timestamp);
-                                        const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-                                        const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-                                        const truncatedUrl = (entry.jobUrl || 'Unknown URL').length > 60
-                                            ? (entry.jobUrl || '').slice(0, 60) + '…'
-                                            : (entry.jobUrl || 'Unknown URL');
+                                        const dateStr = date.toLocaleDateString(undefined, {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric',
+                                        });
+                                        const timeStr = date.toLocaleTimeString(undefined, {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                        });
+                                        const truncatedUrl =
+                                            (entry.jobUrl || 'Unknown URL').length > 60
+                                                ? (entry.jobUrl || '').slice(0, 60) + '…'
+                                                : entry.jobUrl || 'Unknown URL';
                                         const providers = Object.entries(entry.results || {})
                                             .filter(([, v]) => v)
                                             .map(([k]) => k)

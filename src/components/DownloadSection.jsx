@@ -18,6 +18,11 @@ const COLOR_CLASSES = {
         title: 'text-purple-800',
         button: 'bg-purple-600 hover:bg-purple-700',
     },
+    amber: {
+        border: 'border-amber-200',
+        title: 'text-amber-800',
+        button: 'bg-amber-600 hover:bg-amber-700',
+    },
 };
 
 function DownloadSection({ title, results, downloadFile, color }) {

@@ -14,6 +14,10 @@ const COLOR_CLASSES = {
         header: 'bg-purple-50 border-purple-200',
         title: 'text-purple-800',
     },
+    amber: {
+        header: 'bg-amber-50 border-amber-200',
+        title: 'text-amber-800',
+    },
 };
 
 function ChangesSection({ title, results, parseChangesData, color }) {
