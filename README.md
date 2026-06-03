@@ -43,6 +43,33 @@ Or run the prebuilt image from GitHub Container Registry:
 docker run -p 3000:3000 --env-file backend/.env ghcr.io/monahand1023/resume-generator:latest
 ```
 
+## CLI
+
+Prefer the terminal? A one-shot command does the same thing without the web UI —
+give it a resume and a job URL, get tailored documents out. It reuses the exact
+same scrape → parse → AI → validate → render pipeline, minus the server.
+
+```bash
+cd backend && npm install
+
+# Key comes from the environment (or use --provider bedrock with AWS configured)
+export ANTHROPIC_API_KEY=sk-ant-...
+npm run customize -- ../resume.pdf "https://company.com/jobs/123"
+```
+
+Output (PDF + DOCX by default) lands in `./out`. Options:
+
+```bash
+npm run customize -- ../resume.pdf "<url>" \
+  --provider openai \           # openai | gemini | claude | bedrock (default: auto-detect)
+  --format pdf,docx,md,txt \    # any subset (default: pdf,docx)
+  --out ./applications/acme     # output directory (default: ./out)
+```
+
+The provider auto-detects from whichever of `OPENAI_API_KEY` / `GEMINI_API_KEY` /
+`ANTHROPIC_API_KEY` is set (or Bedrock via AWS credentials). To install it as a
+global command: `cd backend && npm link`, then `resume-customize ./resume.pdf "<url>"`.
+
 ## Environment Variables
 
 Copy `.env.example` to `backend/.env`. Required variables:
