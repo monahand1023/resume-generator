@@ -46,6 +46,18 @@ const config = {
             windowMs: intEnv('RATE_LIMIT_RESUME_WINDOW_MS', 60 * 60 * 1000),
             max: intEnv('RATE_LIMIT_RESUME_MAX', 10),
         },
+        preview: {
+            windowMs: intEnv('RATE_LIMIT_PREVIEW_WINDOW_MS', 60 * 60 * 1000),
+            max: intEnv('RATE_LIMIT_PREVIEW_MAX', 30),
+        },
+    },
+
+    // In-memory result cache: same resume+jobUrl+provider reuses the prior
+    // result instead of re-spending AI tokens. In-memory (not on disk) to keep
+    // resume content out of persistent storage.
+    cache: {
+        ttlMs: intEnv('RESULT_CACHE_TTL_MS', 24 * 60 * 60 * 1000),
+        maxEntries: intEnv('RESULT_CACHE_MAX_ENTRIES', 50),
     },
 
     queue: {

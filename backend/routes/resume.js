@@ -9,8 +9,11 @@ const { scrapeJobDescription, parseResumeFile } = require('../utils/scraper');
 const { validateJobUrl } = require('../utils/ssrf');
 const { extractNameFromResume, extractJobDetails, sanitizeFilename } = require('../utils/clean');
 const registry = require('../services/ai');
+const { missingMarkers } = require('../services/ai/validate');
 const { createStyledPDF } = require('../services/document/pdf');
 const { createWordDoc } = require('../services/document/docx');
+const { renderMarkdown, renderPlainText } = require('../services/document/render');
+const resultCache = require('../services/cache/resultCache');
 const { enqueue, getJob } = require('../services/queue/jobQueue');
 
 // Magic-byte lookup (must match the multer guard in server.js)
@@ -85,7 +88,17 @@ router.post('/customize-resume', async (req, res) => {
         return res.status(400).json({ error: `Invalid job URL: ${err.message}` });
     }
 
+    const cacheKey = resultCache.keyFor(provider, jobUrl, resume);
+
     const jobId = enqueue(async () => {
+        // Same resume + job URL + provider → reuse the prior result instead of
+        // re-scraping and re-spending AI tokens.
+        const cached = resultCache.get(cacheKey);
+        if (cached) {
+            logger.info('result cache hit', { provider });
+            return cached;
+        }
+
         const rawJobDescription = await scrapeJobDescription(jobUrl);
         const jobDescription = rawJobDescription.slice(0, config.jdMaxLength);
 
@@ -104,15 +117,90 @@ router.post('/customize-resume', async (req, res) => {
             descriptor.customize({ resumeText, jobDescription, apiKey, type: 'changes' }),
         ]);
 
-        return {
+        // Reject malformed output for the downloadable documents so it never
+        // reaches the renderers. The changes summary has a graceful raw-text
+        // fallback in the UI, so it is only warned about.
+        const badMarkers = [
+            ...missingMarkers(customizedResume, 'resume'),
+            ...missingMarkers(coverLetter, 'cover_letter'),
+        ];
+        if (badMarkers.length) {
+            throw new Error(
+                `${descriptor.label} returned malformed output (missing: ${badMarkers.join(', ')}). Please retry.`
+            );
+        }
+        const changesMissing = missingMarkers(changes, 'changes');
+        if (changesMissing.length) {
+            logger.warn('changes output missing markers', { provider, missing: changesMissing });
+        }
+
+        const result = {
             resume: customizedResume,
             coverLetter,
             changes,
             metadata: { name, company: jobDetails.company, position: jobDetails.position },
         };
+        resultCache.set(cacheKey, result);
+        return result;
     });
 
     res.status(202).json({ jobId, status: 'pending' });
+});
+
+/**
+ * POST /api/preview
+ *
+ * Body (multipart/form-data): resume file + jobUrl.
+ * Scrapes and parses the inputs WITHOUT calling the AI, so the user can see
+ * exactly what the model will receive (and whether company/position were
+ * detected) before spending tokens.
+ *
+ * Response: { jobDescription, resumeText, metadata: { name, company, position } }
+ */
+router.post('/preview', async (req, res) => {
+    const { jobUrl } = req.body;
+    const resume = req.file?.buffer;
+
+    if (!jobUrl || !resume) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+    if (typeof jobUrl !== 'string' || jobUrl.length > config.maxJobUrlLength) {
+        return res.status(400).json({ error: 'Job URL is missing or too long' });
+    }
+
+    const isPDF = checkMagicBytes(resume, 'pdf');
+    const isDOCX = checkMagicBytes(resume, 'docx');
+    if (!isPDF && !isDOCX) {
+        return res.status(400).json({ error: 'Invalid file format. Only PDF and DOCX files are accepted.' });
+    }
+
+    try {
+        await validateJobUrl(jobUrl);
+    } catch (err) {
+        return res.status(400).json({ error: `Invalid job URL: ${err.message}` });
+    }
+
+    try {
+        const rawJobDescription = await scrapeJobDescription(jobUrl);
+        const jobDescription = rawJobDescription.slice(0, config.jdMaxLength);
+
+        let resumeText = await parseResumeFile(resume);
+        if (resumeText.length > config.maxResumeChars) {
+            resumeText = resumeText.slice(0, config.maxResumeChars);
+        }
+
+        const name = extractNameFromResume(resumeText);
+        const jobDetails = extractJobDetails(jobDescription);
+
+        res.json({
+            jobDescription,
+            resumeText,
+            metadata: { name, company: jobDetails.company, position: jobDetails.position },
+        });
+    } catch (err) {
+        logger.error('preview failed', { error: err });
+        res.status(500).json({ error: 'Failed to preview inputs' });
+    }
 });
 
 /**
@@ -239,6 +327,14 @@ router.post('/format-document', async (req, res) => {
             buffer = await createWordDoc(content, filename);
             contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
             fileExtension = 'docx';
+        } else if (format === 'md') {
+            buffer = Buffer.from(renderMarkdown(content), 'utf-8');
+            contentType = 'text/markdown; charset=utf-8';
+            fileExtension = 'md';
+        } else if (format === 'txt') {
+            buffer = Buffer.from(renderPlainText(content), 'utf-8');
+            contentType = 'text/plain; charset=utf-8';
+            fileExtension = 'txt';
         } else {
             return res.status(400).json({ error: 'Unsupported format' });
         }

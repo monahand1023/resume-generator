@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Upload, Link, Key, FileText, Loader2, ChevronDown, ChevronUp, Clock, Trash2 } from 'lucide-react';
+import { Upload, Link, Key, FileText, Loader2, ChevronDown, ChevronUp, Clock, Trash2, Eye } from 'lucide-react';
 import DownloadSection from './components/DownloadSection';
 import ChangesSection from './components/ChangesSection';
 import ApiKeyInput from './components/ApiKeyInput';
 import ProviderErrorCard from './components/ProviderErrorCard';
+import InputPreview from './components/InputPreview';
 import { PROVIDERS, isKeyValid } from './config/providers';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3000';
@@ -26,6 +27,8 @@ function App() {
     const [progress, setProgress] = useState(() => perProvider(0));
     const [showKeys, setShowKeys] = useState(() => perProvider(false));
     const [error, setError] = useState('');
+    const [preview, setPreview] = useState(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
     const [serverProviders, setServerProviders] = useState(null);
     const [history, setHistory] = useState(() => {
         try {
@@ -261,6 +264,36 @@ function App() {
         }
     };
 
+    const handlePreview = async () => {
+        if (!canSubmit) {
+            setError('Add a job URL and upload your resume first');
+            return;
+        }
+        setPreviewLoading(true);
+        setError('');
+        try {
+            const formData = new FormData();
+            formData.append('resume', resume);
+            formData.append('jobUrl', jobUrl);
+            const response = await fetch(`${BACKEND_URL}/api/preview`, { method: 'POST', body: formData });
+            if (!response.ok) {
+                let msg = 'Preview failed';
+                try {
+                    const e = await response.json();
+                    msg = e.error || msg;
+                } catch (_) {
+                    /* non-JSON error body */
+                }
+                throw new Error(msg);
+            }
+            setPreview(await response.json());
+        } catch (err) {
+            setError(err.message || 'Preview failed');
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
     const generateFilename = (baseType, metadata, format) => {
         if (!metadata) return `${baseType}.${format}`;
         const { name, company, position } = metadata;
@@ -293,19 +326,10 @@ function App() {
         }
     };
 
+    // All formats (txt/md/pdf/docx) are rendered server-side so the marker
+    // format is stripped into clean output rather than dumped raw.
     const downloadFile = (content, baseFilename, format = 'txt', metadata = null) => {
-        if (format === 'pdf' || format === 'docx') {
-            downloadFormattedFile(content, baseFilename, format, metadata);
-            return;
-        }
-        const filename = generateFilename(baseFilename, metadata, format);
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadFormattedFile(content, baseFilename, format, metadata);
     };
 
     const cleanMarkdown = (text) => {
@@ -456,6 +480,32 @@ function App() {
                             <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">{error}</div>
                         )}
 
+                        {/* Preview inputs (scrape + parse, no AI) */}
+                        <div>
+                            <button
+                                onClick={handlePreview}
+                                disabled={!canSubmit || previewLoading}
+                                className={`w-full font-medium py-2.5 px-4 rounded-lg border transition-colors flex items-center justify-center ${
+                                    canSubmit && !previewLoading
+                                        ? 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                                        : 'border-gray-200 text-gray-400 cursor-not-allowed'
+                                }`}
+                                title={!canSubmit ? 'Add job URL and upload resume' : 'See the scraped JD + parsed resume before running'}
+                            >
+                                {previewLoading ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        Loading preview...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Eye className="w-4 h-4 mr-2" />
+                                        Preview inputs (no AI)
+                                    </>
+                                )}
+                            </button>
+                        </div>
+
                         {/* Action Buttons */}
                         <div className={gridCols(visibleProviders.length)}>
                             {visibleProviders.map((provider) => {
@@ -540,6 +590,9 @@ function App() {
                         )}
                     </div>
                 </div>
+
+                {/* Input preview (what the AI will see) */}
+                <InputPreview data={preview} onClose={() => setPreview(null)} />
 
                 {/* Download Section */}
                 {hasAnyResult && (

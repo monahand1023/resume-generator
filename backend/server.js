@@ -54,6 +54,15 @@ const resumeLimiter = rateLimit({
     message: { error: 'Rate limit exceeded for resume customization. Please wait before trying again.' },
 });
 
+// Preview scrapes (Puppeteer) but skips the AI — its own, looser limit.
+const previewLimiter = rateLimit({
+    windowMs: config.rateLimit.preview.windowMs,
+    max: config.rateLimit.preview.max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Rate limit exceeded for input preview. Please wait before trying again.' },
+});
+
 // ---------------------------------------------------------------------------
 // Express app
 // ---------------------------------------------------------------------------
@@ -70,7 +79,9 @@ app.use(cors({
         : true,
     credentials: false,
 }));
-app.use(morgan('combined'));
+if (process.env.NODE_ENV !== 'test') {
+    app.use(morgan('combined'));
+}
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -86,9 +97,11 @@ app.get('/health', (req, res) => {
 
 app.use(globalLimiter);
 app.use('/api/customize-resume', resumeLimiter);
+app.use('/api/preview', previewLimiter);
 
-// Attach multer to the customize-resume endpoint only (it needs the file)
+// Attach multer to the endpoints that receive the resume file.
 app.use('/api/customize-resume', upload.single('resume'));
+app.use('/api/preview', upload.single('resume'));
 
 // API routes
 app.use('/api', resumeRoutes);
@@ -124,11 +137,14 @@ app.use((err, req, res, next) => {
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
-app.listen(config.port, () => {
-    logger.info('server started', {
-        port: config.port,
-        providers: registry.availableProviders().map((p) => p.id),
+// Only listen when run directly (not when imported by tests).
+if (require.main === module) {
+    app.listen(config.port, () => {
+        logger.info('server started', {
+            port: config.port,
+            providers: registry.availableProviders().map((p) => p.id),
+        });
     });
-});
+}
 
 module.exports = app;

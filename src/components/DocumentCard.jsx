@@ -59,10 +59,19 @@ function DocumentCard({ title, icon, content, filename, downloadFile, buttonClas
                 <div className="flex gap-2">
                     <button
                         onClick={() => downloadFile(content, filename, 'txt', metadata)}
+                        title="Clean ATS-friendly plain text"
                         className={`flex-1 ${buttonClass} text-white px-3 py-2 rounded text-sm font-medium transition-colors`}
                     >
                         <Download className="w-4 h-4 mr-1 inline" />
                         TXT
+                    </button>
+                    <button
+                        onClick={() => downloadFile(content, filename, 'md', metadata)}
+                        title="Markdown"
+                        className={`flex-1 ${buttonClass} text-white px-3 py-2 rounded text-sm font-medium transition-colors`}
+                    >
+                        <Download className="w-4 h-4 mr-1 inline" />
+                        MD
                     </button>
                     <button
                         onClick={() => downloadFile(content, filename, 'pdf', metadata)}
