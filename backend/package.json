@@ -24,7 +24,7 @@
     "multer": "^2.0.0",
     "pdf-parse": "^1.1.1",
     "pdfkit": "^0.17.1",
-    "puppeteer": "^25.0.2"
+    "puppeteer": "^25.0.4"
   },
   "devDependencies": {
     "eslint": "^8.57.0",
