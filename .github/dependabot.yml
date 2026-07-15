@@ -1,10 +1,12 @@
 version: 2
 updates:
   - package-ecosystem: npm
+    open-pull-requests-limit: 0
     directory: "/"
     schedule:
       interval: weekly
   - package-ecosystem: npm
+    open-pull-requests-limit: 0
     directory: "/backend"
     schedule:
       interval: weekly
