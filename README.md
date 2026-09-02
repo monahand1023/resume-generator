@@ -34,7 +34,7 @@ npm start   # http://localhost:3000
 Or with Docker:
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 Or run the prebuilt image from GitHub Container Registry:
