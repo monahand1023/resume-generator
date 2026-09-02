@@ -7,6 +7,8 @@ export default defineConfig({
     // backend/public, where Express serves it.
     build: { outDir: 'build' },
     test: {
+        // Only the frontend suite; backend/tests/ is a separate Jest project.
+        include: ['src/**/*.{test,spec}.{js,jsx}'],
         environment: 'jsdom',
         globals: true,
         setupFiles: './src/setupTests.js',
