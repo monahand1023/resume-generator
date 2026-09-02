@@ -7,7 +7,7 @@ import ProviderErrorCard from './components/ProviderErrorCard';
 import InputPreview from './components/InputPreview';
 import { PROVIDERS, isKeyValid } from './config/providers';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
 // Purge-safe column classes (built statically so a future compiled Tailwind
 // build keeps them).

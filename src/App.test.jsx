@@ -1,4 +1,5 @@
 import React from 'react';
+import { vi } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import App from './App';
 
@@ -16,7 +17,7 @@ const PREVIEW_DATA = {
 };
 
 function mockProviders(providers) {
-    global.fetch = jest.fn((url) => {
+    global.fetch = vi.fn((url) => {
         const u = String(url);
         if (u.includes('/api/providers')) {
             return Promise.resolve({ ok: true, json: async () => ({ providers }) });
@@ -34,7 +35,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     delete global.fetch;
 });
 

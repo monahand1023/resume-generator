@@ -9,7 +9,7 @@ Runs locally via Docker. No data is stored or shared. You bring your own API key
 
 ## Tech Stack
 
-- **Frontend**: React 18, Tailwind CSS
+- **Frontend**: React 18 (Vite), Tailwind CSS
 - **Backend**: Node.js, Express.js, Puppeteer (job scraping)
 - **AI Providers**: OpenAI GPT-4, Google Gemini, Anthropic Claude, Amazon Bedrock (Nova)
 - **Document generation**: PDFKit (PDF), DOCX library (Word)
