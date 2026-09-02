@@ -1,0 +1,11 @@
+.git
+.gitignore
+node_modules
+**/node_modules
+build
+backend/public
+**/.env
+**/.env.*
+!**/.env.example
+*.md
+.github
